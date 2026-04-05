@@ -2,16 +2,32 @@ import SwiftUI
 import DesignModel
 
 /// Recursively renders an ElementNode tree as SwiftUI views on the canvas.
-/// This is the bridge between the data model and visual representation.
+/// Supports selection, drag-to-move, and visual modifier application.
 public struct ElementRenderer: View {
     let node: ElementNode
     let selectedID: UUID?
     let onSelect: (UUID) -> Void
+    let onMove: (UUID, CGFloat, CGFloat) -> Void
+    let snapSettings: SnapSettings
+    let isRoot: Bool
 
-    public init(node: ElementNode, selectedID: UUID? = nil, onSelect: @escaping (UUID) -> Void = { _ in }) {
+    @State private var dragOffset: CGSize = .zero
+    @State private var isDragging = false
+
+    public init(
+        node: ElementNode,
+        selectedID: UUID? = nil,
+        snapSettings: SnapSettings = SnapSettings(),
+        isRoot: Bool = true,
+        onSelect: @escaping (UUID) -> Void = { _ in },
+        onMove: @escaping (UUID, CGFloat, CGFloat) -> Void = { _, _, _ in }
+    ) {
         self.node = node
         self.selectedID = selectedID
+        self.snapSettings = snapSettings
+        self.isRoot = isRoot
         self.onSelect = onSelect
+        self.onMove = onMove
     }
 
     public var body: some View {
@@ -19,15 +35,66 @@ public struct ElementRenderer: View {
             renderPayload()
                 .applyModifiers(node.modifiers)
                 .contentShape(Rectangle())
-                .onTapGesture { onSelect(node.id) }
                 .overlay {
                     if selectedID == node.id {
                         SelectionOverlay()
                     }
                 }
+                // Element drag gesture (only for non-root, non-locked elements)
+                .offset(dragOffset)
+                .gesture(elementDragGesture)
+                .onTapGesture {
+                    onSelect(node.id)
+                }
                 .id(node.id)
         }
     }
+
+    // MARK: - Element Drag Gesture
+
+    private var elementDragGesture: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                guard !node.isLocked && !isRoot else { return }
+                isDragging = true
+                var newX = value.translation.width
+                var newY = value.translation.height
+                if snapSettings.isEnabled {
+                    newX = snapSettings.snap(newX)
+                    newY = snapSettings.snap(newY)
+                }
+                dragOffset = CGSize(width: newX, height: newY)
+                // Select on drag start
+                onSelect(node.id)
+            }
+            .onEnded { value in
+                guard !node.isLocked && !isRoot else { return }
+                isDragging = false
+
+                // Get current offset from modifiers
+                var currentX: CGFloat = 0
+                var currentY: CGFloat = 0
+                for mod in node.modifiers {
+                    if case .offset(let x, let y) = mod {
+                        currentX = x
+                        currentY = y
+                    }
+                }
+
+                var finalX = currentX + value.translation.width
+                var finalY = currentY + value.translation.height
+                if snapSettings.isEnabled {
+                    finalX = snapSettings.snap(finalX)
+                    finalY = snapSettings.snap(finalY)
+                }
+
+                // Commit the move
+                onMove(node.id, finalX, finalY)
+                dragOffset = .zero
+            }
+    }
+
+    // MARK: - Payload Rendering
 
     @ViewBuilder
     private func renderPayload() -> some View {
@@ -98,17 +165,16 @@ public struct ElementRenderer: View {
         case .color(let designColor):
             designColor.swiftUIColor
 
-        // Navigation
+        // Navigation — render with Liquid Glass approximation
         case .navigationStack(let title, _):
             VStack(spacing: 0) {
-                // Simulated navigation bar
                 HStack {
                     Text(title).font(.largeTitle).bold()
                     Spacer()
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(.ultraThinMaterial)
+                .background(GlassBackgroundView())
                 renderChildren()
                 Spacer()
             }
@@ -118,7 +184,7 @@ public struct ElementRenderer: View {
                     renderChildren()
                 }
                 .frame(maxHeight: .infinity)
-                // Simulated tab bar
+                // Floating Liquid Glass tab bar
                 HStack {
                     ForEach(tabs) { tab in
                         VStack(spacing: 4) {
@@ -130,8 +196,12 @@ public struct ElementRenderer: View {
                         .frame(maxWidth: .infinity)
                     }
                 }
-                .padding(.vertical, 8)
-                .background(.ultraThinMaterial)
+                .padding(.vertical, 10)
+                .padding(.horizontal, 16)
+                .background(GlassBackgroundView())
+                .clipShape(Capsule())
+                .padding(.horizontal, 40)
+                .padding(.bottom, 8)
             }
         case .sheet:
             RoundedRectangle(cornerRadius: 12)
@@ -200,7 +270,51 @@ public struct ElementRenderer: View {
     @ViewBuilder
     private func renderChildren() -> some View {
         ForEach(node.children) { child in
-            ElementRenderer(node: child, selectedID: selectedID, onSelect: onSelect)
+            ElementRenderer(
+                node: child,
+                selectedID: selectedID,
+                snapSettings: snapSettings,
+                isRoot: false,
+                onSelect: onSelect,
+                onMove: onMove
+            )
+        }
+    }
+}
+
+// MARK: - Glass Background View (Liquid Glass approximation on macOS)
+
+struct GlassBackgroundView: View {
+    var body: some View {
+        ZStack {
+            // Multi-layer glass approximation
+            Rectangle()
+                .fill(.ultraThinMaterial)
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.25),
+                            Color.white.opacity(0.05),
+                            Color.white.opacity(0.15)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            // Top highlight (specular)
+            VStack {
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.4), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(height: 1)
+                Spacer()
+            }
         }
     }
 }
@@ -248,6 +362,15 @@ extension View {
         case .font(let style, let size, let weight, let design):
             self.font(Self.buildFont(style: style, size: size, weight: weight, design: design))
 
+        case .multilineTextAlignment(let alignment):
+            self.multilineTextAlignment(alignment.swiftUITextAlignment)
+
+        case .lineLimit(let limit):
+            self.lineLimit(limit)
+
+        case .lineSpacing(let spacing):
+            self.lineSpacing(spacing)
+
         case .cornerRadius(let radius):
             self.clipShape(RoundedRectangle(cornerRadius: radius))
 
@@ -256,6 +379,13 @@ extension View {
 
         case .blur(let radius):
             self.blur(radius: radius)
+
+        case .glassEffect:
+            // Liquid Glass approximation on macOS canvas
+            self.background(GlassBackgroundView())
+
+        case .glassEffectContainer:
+            self.background(GlassBackgroundView())
 
         case .offset(let x, let y):
             self.offset(x: x, y: y)
@@ -269,6 +399,9 @@ extension View {
         case .zIndex(let index):
             self.zIndex(index)
 
+        case .disabled(let isDisabled):
+            self.disabled(isDisabled)
+
         case .clipShape(let shape):
             switch shape {
             case .rectangle: AnyView(self.clipShape(Rectangle()))
@@ -277,6 +410,9 @@ extension View {
             case .capsule: AnyView(self.clipShape(Capsule()))
             case .ellipse: AnyView(self.clipShape(Ellipse()))
             }
+
+        case .layoutPriority(let priority):
+            self.layoutPriority(priority)
 
         default:
             self

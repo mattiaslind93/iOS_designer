@@ -1,20 +1,31 @@
 import SwiftUI
 
 /// Visual selection indicator shown around the currently selected element.
-/// Displays a blue border with resize handles at corners and edges.
+/// Displays a blue border with resize handles at corners and midpoints.
 public struct SelectionOverlay: View {
     public init() {}
 
     public var body: some View {
-        ZStack {
-            // Selection border
-            Rectangle()
-                .strokeBorder(Color.accentColor, lineWidth: 1.5)
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
 
-            // Corner handles
-            ForEach(HandlePosition.allCases, id: \.self) { position in
-                ResizeHandle()
-                    .position(position.offset)
+            ZStack {
+                // Selection border
+                Rectangle()
+                    .strokeBorder(Color.accentColor, lineWidth: 1.5)
+
+                // Corner handles
+                ResizeHandle().position(x: 0, y: 0)
+                ResizeHandle().position(x: w, y: 0)
+                ResizeHandle().position(x: 0, y: h)
+                ResizeHandle().position(x: w, y: h)
+
+                // Midpoint handles
+                ResizeHandle(small: true).position(x: w / 2, y: 0)
+                ResizeHandle(small: true).position(x: w / 2, y: h)
+                ResizeHandle(small: true).position(x: 0, y: h / 2)
+                ResizeHandle(small: true).position(x: w, y: h / 2)
             }
         }
         .allowsHitTesting(false)
@@ -22,33 +33,17 @@ public struct SelectionOverlay: View {
 }
 
 struct ResizeHandle: View {
+    var small: Bool = false
+
     var body: some View {
+        let size: CGFloat = small ? 6 : 8
         Circle()
             .fill(Color.white)
-            .frame(width: 8, height: 8)
+            .frame(width: size, height: size)
             .overlay {
                 Circle()
                     .stroke(Color.accentColor, lineWidth: 1.5)
             }
-    }
-}
-
-enum HandlePosition: CaseIterable {
-    case topLeading, topTrailing, bottomLeading, bottomTrailing
-    case topCenter, bottomCenter, leadingCenter, trailingCenter
-
-    var offset: CGPoint {
-        // These are relative positions; actual positions are set via GeometryReader
-        // when used in the real selection overlay. This is a simplified version.
-        switch self {
-        case .topLeading:      return CGPoint(x: 0, y: 0)
-        case .topTrailing:     return CGPoint(x: 1, y: 0)
-        case .bottomLeading:   return CGPoint(x: 0, y: 1)
-        case .bottomTrailing:  return CGPoint(x: 1, y: 1)
-        case .topCenter:       return CGPoint(x: 0.5, y: 0)
-        case .bottomCenter:    return CGPoint(x: 0.5, y: 1)
-        case .leadingCenter:   return CGPoint(x: 0, y: 0.5)
-        case .trailingCenter:  return CGPoint(x: 1, y: 0.5)
-        }
+            .shadow(color: .black.opacity(0.15), radius: 1, x: 0, y: 1)
     }
 }

@@ -3,6 +3,7 @@ import DesignModel
 
 /// Categories for organizing components in the sidebar.
 public enum ComponentCategory: String, CaseIterable, Identifiable {
+    case liquidGlass = "Liquid Glass"
     case layout = "Layout"
     case navigation = "Navigation"
     case controls = "Controls"
@@ -14,17 +15,170 @@ public enum ComponentCategory: String, CaseIterable, Identifiable {
 
     public var systemImage: String {
         switch self {
-        case .layout:     return "square.grid.2x2"
-        case .navigation: return "sidebar.squares.leading"
-        case .controls:   return "slider.horizontal.3"
-        case .content:    return "text.alignleft"
-        case .shapes:     return "circle.square"
-        case .containers: return "rectangle.on.rectangle"
+        case .liquidGlass: return "circle.hexagongrid"
+        case .layout:      return "square.grid.2x2"
+        case .navigation:  return "sidebar.squares.leading"
+        case .controls:    return "slider.horizontal.3"
+        case .content:     return "text.alignleft"
+        case .shapes:      return "circle.square"
+        case .containers:  return "rectangle.on.rectangle"
         }
     }
 
     public var components: [ComponentTemplate] {
         switch self {
+        case .liquidGlass:
+            return [
+                ComponentTemplate(
+                    name: "Glass Circle Button",
+                    icon: "circle.fill",
+                    payload: .button(title: "", style: .borderless),
+                    defaultModifiers: [
+                        .frame(width: 52, height: 52, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: .center),
+                        .glassEffect(.regular),
+                        .clipShape(.circle),
+                    ],
+                    defaultChildren: [
+                        ElementNode(name: "Icon", payload: .image(systemName: "plus", assetName: nil), modifiers: [
+                            .frame(width: 22, height: 22, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: nil),
+                            .foregroundStyle(.system(.label))
+                        ])
+                    ]
+                ),
+                ComponentTemplate(
+                    name: "Glass Pill Button",
+                    icon: "capsule.fill",
+                    payload: .hStack(spacing: 8, alignment: .center),
+                    defaultModifiers: [
+                        .padding(edges: .horizontal, amount: 20),
+                        .padding(edges: .vertical, amount: 12),
+                        .glassEffect(.regular),
+                        .clipShape(.capsule),
+                    ],
+                    defaultChildren: [
+                        ElementNode(name: "Icon", payload: .image(systemName: "star.fill", assetName: nil), modifiers: [
+                            .frame(width: 16, height: 16, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: nil),
+                            .foregroundStyle(.system(.label))
+                        ]),
+                        ElementNode(name: "Label", payload: .text(content: "Action", style: .callout), modifiers: [
+                            .foregroundStyle(.system(.label))
+                        ])
+                    ]
+                ),
+                ComponentTemplate(
+                    name: "Glass Text Button",
+                    icon: "textformat",
+                    payload: .text(content: "Button", style: .body),
+                    defaultModifiers: [
+                        .padding(edges: .horizontal, amount: 24),
+                        .padding(edges: .vertical, amount: 12),
+                        .glassEffect(.regular),
+                        .clipShape(.capsule),
+                        .foregroundStyle(.system(.label)),
+                    ]
+                ),
+                ComponentTemplate(
+                    name: "Glass Card",
+                    icon: "rectangle.fill",
+                    payload: .vStack(spacing: 12, alignment: .leading),
+                    defaultModifiers: [
+                        .padding(edges: .all, amount: 16),
+                        .glassEffect(.regular),
+                        .cornerRadius(16),
+                    ],
+                    defaultChildren: [
+                        ElementNode(name: "Title", payload: .text(content: "Card Title", style: .headline)),
+                        ElementNode(name: "Body", payload: .text(content: "Card description text goes here.", style: .body), modifiers: [
+                            .foregroundStyle(.system(.secondaryLabel))
+                        ])
+                    ]
+                ),
+                ComponentTemplate(
+                    name: "Glass Toolbar",
+                    icon: "rectangle.bottomhalf.filled",
+                    payload: .hStack(spacing: 24, alignment: .center),
+                    defaultModifiers: [
+                        .padding(edges: .horizontal, amount: 24),
+                        .padding(edges: .vertical, amount: 12),
+                        .glassEffect(.regular),
+                        .clipShape(.capsule),
+                    ],
+                    defaultChildren: [
+                        ElementNode(name: "Item 1", payload: .image(systemName: "house.fill", assetName: nil), modifiers: [
+                            .frame(width: 22, height: 22, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: nil),
+                            .foregroundStyle(.system(.label))
+                        ]),
+                        ElementNode(name: "Item 2", payload: .image(systemName: "magnifyingglass", assetName: nil), modifiers: [
+                            .frame(width: 22, height: 22, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: nil),
+                            .foregroundStyle(.system(.secondaryLabel))
+                        ]),
+                        ElementNode(name: "Item 3", payload: .image(systemName: "person.fill", assetName: nil), modifiers: [
+                            .frame(width: 22, height: 22, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: nil),
+                            .foregroundStyle(.system(.secondaryLabel))
+                        ])
+                    ]
+                ),
+                ComponentTemplate(
+                    name: "Glass Floating Action",
+                    icon: "plus.circle.fill",
+                    payload: .zStack(alignment: .center),
+                    defaultModifiers: [
+                        .frame(width: 60, height: 60, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: .center),
+                        .glassEffect(.regular),
+                        .clipShape(.circle),
+                        .shadow(color: .custom(red: 0, green: 0, blue: 0, opacity: 0.15), radius: 8, x: 0, y: 4),
+                    ],
+                    defaultChildren: [
+                        ElementNode(name: "Icon", payload: .image(systemName: "plus", assetName: nil), modifiers: [
+                            .frame(width: 24, height: 24, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: nil),
+                            .foregroundStyle(.system(.accentColor)),
+                            .font(style: nil, size: nil, weight: .semibold, design: nil)
+                        ])
+                    ]
+                ),
+                ComponentTemplate(
+                    name: "Glass Search Bar",
+                    icon: "magnifyingglass",
+                    payload: .hStack(spacing: 8, alignment: .center),
+                    defaultModifiers: [
+                        .padding(edges: .horizontal, amount: 16),
+                        .padding(edges: .vertical, amount: 10),
+                        .frame(width: nil, height: nil, minWidth: nil, maxWidth: .infinity, minHeight: nil, maxHeight: nil, alignment: nil),
+                        .glassEffect(.regular),
+                        .cornerRadius(20),
+                    ],
+                    defaultChildren: [
+                        ElementNode(name: "Icon", payload: .image(systemName: "magnifyingglass", assetName: nil), modifiers: [
+                            .frame(width: 16, height: 16, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: nil),
+                            .foregroundStyle(.system(.tertiaryLabel))
+                        ]),
+                        ElementNode(name: "Placeholder", payload: .text(content: "Search", style: .body), modifiers: [
+                            .foregroundStyle(.system(.tertiaryLabel))
+                        ])
+                    ]
+                ),
+                ComponentTemplate(
+                    name: "Glass Nav Bar",
+                    icon: "arrow.triangle.branch",
+                    payload: .navigationStack(title: "Title", displayMode: .large),
+                    defaultModifiers: [
+                        .glassEffect(.regular),
+                    ]
+                ),
+                ComponentTemplate(
+                    name: "Glass Tab Bar",
+                    icon: "rectangle.bottomhalf.filled",
+                    payload: .tabView(tabs: [
+                        TabItemConfig(title: "Home", systemImage: "house.fill"),
+                        TabItemConfig(title: "Search", systemImage: "magnifyingglass"),
+                        TabItemConfig(title: "Favorites", systemImage: "heart.fill"),
+                        TabItemConfig(title: "Profile", systemImage: "person.fill"),
+                    ]),
+                    defaultModifiers: [
+                        .glassEffect(.regular),
+                    ]
+                ),
+            ]
         case .layout:
             return [
                 ComponentTemplate(name: "VStack", icon: "arrow.down.square", payload: .vStack(spacing: 8, alignment: .center)),
@@ -93,18 +247,38 @@ public struct ComponentTemplate: Identifiable {
     public let name: String
     public let icon: String
     public let payload: ElementPayload
+    public let defaultModifiers: [DesignModifier]?
+    public let defaultChildren: [ElementNode]?
 
-    public init(name: String, icon: String, payload: ElementPayload) {
+    public init(
+        name: String,
+        icon: String,
+        payload: ElementPayload,
+        defaultModifiers: [DesignModifier]? = nil,
+        defaultChildren: [ElementNode]? = nil
+    ) {
         self.name = name
         self.icon = icon
         self.payload = payload
+        self.defaultModifiers = defaultModifiers
+        self.defaultChildren = defaultChildren
     }
 
     /// Create an ElementNode from this template
     public func createNode() -> ElementNode {
+        // Use explicit modifiers if provided
+        if let mods = defaultModifiers {
+            return ElementNode(
+                name: name,
+                payload: payload,
+                modifiers: mods,
+                children: defaultChildren ?? []
+            )
+        }
+
+        // Otherwise use auto-defaults based on type
         var modifiers: [DesignModifier] = []
 
-        // Add default modifiers based on type
         switch payload {
         case .rectangle, .circle, .roundedRectangle, .capsule:
             modifiers = [
@@ -126,7 +300,8 @@ public struct ComponentTemplate: Identifiable {
         return ElementNode(
             name: name,
             payload: payload,
-            modifiers: modifiers
+            modifiers: modifiers,
+            children: defaultChildren ?? []
         )
     }
 }

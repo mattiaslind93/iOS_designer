@@ -102,6 +102,16 @@ extension FontDesignType {
     }
 }
 
+extension TextAlignmentType {
+    public var swiftUITextAlignment: TextAlignment {
+        switch self {
+        case .leading:  return .leading
+        case .center:   return .center
+        case .trailing: return .trailing
+        }
+    }
+}
+
 extension EdgeSetType {
     public var swiftUIValue: Edge.Set {
         switch self {

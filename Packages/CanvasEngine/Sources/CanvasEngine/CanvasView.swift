@@ -1,14 +1,15 @@
 import SwiftUI
 import DesignModel
 
-/// The main design canvas with zoom, pan, and the iPhone device frame.
-/// Supports element selection and serves as the primary drop target.
+/// The main design canvas with zoom, pan (Alt+drag), and the iPhone device frame.
+/// Supports element selection, drag-to-move elements, and snapping.
 public struct CanvasView: View {
     @ObservedObject var document: DesignDocument
     @State private var scale: CGFloat = 0.6
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
     @State private var showGrid: Bool = false
+    @State private var snapSettings: SnapSettings = SnapSettings()
 
     public init(document: DesignDocument) {
         self.document = document
@@ -19,6 +20,7 @@ public struct CanvasView: View {
             ZStack {
                 // Canvas background (infinite area)
                 canvasBackground
+                    .gesture(panGesture)
 
                 // Phone frame centered
                 if let page = document.selectedPage {
@@ -29,14 +31,12 @@ public struct CanvasView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
-            .gesture(dragGesture)
             .gesture(magnificationGesture)
-            .onTapGesture {
-                // Deselect when tapping canvas background
-                document.selectedElementID = nil
-            }
             .overlay(alignment: .bottomTrailing) {
                 canvasControls
+            }
+            .overlay(alignment: .bottomLeading) {
+                snapControls
             }
         }
     }
@@ -44,7 +44,6 @@ public struct CanvasView: View {
     // MARK: - Canvas Background
 
     private var canvasBackground: some View {
-        // Subtle dot pattern background
         Canvas { context, size in
             let dotSpacing: CGFloat = 20 * scale
             let dotSize: CGFloat = 1.5
@@ -65,6 +64,9 @@ public struct CanvasView: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .onTapGesture {
+            document.selectedElementID = nil
+        }
     }
 
     // MARK: - Phone Frame
@@ -77,25 +79,50 @@ public struct CanvasView: View {
         ) {
             ZStack {
                 // Grid overlay
-                if showGrid {
-                    GridOverlay(deviceSize: page.deviceFrame.size)
+                if showGrid || (snapSettings.isEnabled && snapSettings.showGuides) {
+                    GridOverlay(
+                        deviceSize: page.deviceFrame.size,
+                        gridSize: snapSettings.isEnabled ? snapSettings.mode.gridSize : 8,
+                        showGrid: showGrid || snapSettings.isEnabled,
+                        snapMode: snapSettings.isEnabled ? snapSettings.mode : nil,
+                        safeAreaInsets: page.deviceFrame.safeAreaInsets
+                    )
                 }
 
                 // Element tree
                 ElementRenderer(
                     node: page.rootElement,
-                    selectedID: document.selectedElementID
-                ) { id in
-                    document.selectedElementID = id
-                }
+                    selectedID: document.selectedElementID,
+                    snapSettings: snapSettings,
+                    isRoot: true,
+                    onSelect: { id in
+                        document.selectedElementID = id
+                    },
+                    onMove: { id, x, y in
+                        document.updateElement(id) { node in
+                            // Remove existing offset modifier
+                            node.modifiers.removeAll { mod in
+                                if case .offset = mod { return true }
+                                return false
+                            }
+                            // Add new offset (only if non-zero)
+                            if abs(x) > 0.5 || abs(y) > 0.5 {
+                                node.modifiers.append(.offset(x: x, y: y))
+                            }
+                        }
+                    }
+                )
             }
         }
+        .gesture(panGesture)
     }
 
     // MARK: - Gestures
 
-    private var dragGesture: some Gesture {
+    /// Pan canvas: Alt+drag (Option key held)
+    private var panGesture: some Gesture {
         DragGesture()
+            .modifiers(.option)
             .onChanged { value in
                 offset = CGSize(
                     width: lastOffset.width + value.translation.width,
@@ -115,7 +142,7 @@ public struct CanvasView: View {
             }
     }
 
-    // MARK: - Controls
+    // MARK: - Canvas Controls (bottom-right)
 
     private var canvasControls: some View {
         VStack(spacing: 8) {
@@ -146,15 +173,48 @@ public struct CanvasView: View {
             } label: {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
             }
+            .help("Reset view")
 
             Button {
                 showGrid.toggle()
             } label: {
                 Image(systemName: showGrid ? "grid.circle.fill" : "grid.circle")
             }
+            .help("Toggle grid")
         }
         .buttonStyle(.borderless)
         .padding(8)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .padding()
+    }
+
+    // MARK: - Snap Controls (bottom-left)
+
+    private var snapControls: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: $snapSettings.isEnabled) {
+                Label("Snap", systemImage: "arrow.down.right.and.arrow.up.left")
+                    .font(.caption)
+            }
+            .toggleStyle(.checkbox)
+
+            if snapSettings.isEnabled {
+                Picker("", selection: $snapSettings.mode) {
+                    ForEach(SnapMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 120)
+
+                Toggle(isOn: $snapSettings.showGuides) {
+                    Text("Show guides")
+                        .font(.caption)
+                }
+                .toggleStyle(.checkbox)
+            }
+        }
+        .padding(10)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
         .padding()
     }
