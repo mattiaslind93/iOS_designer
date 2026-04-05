@@ -32,22 +32,21 @@ public enum ComponentCategory: String, CaseIterable, Identifiable {
                 ComponentTemplate(
                     name: "Glass Circle Button",
                     icon: "circle.fill",
-                    payload: .button(title: "Add", style: .glass),
+                    payload: .zStack(alignment: .center),
                     defaultModifiers: [
                         .frame(width: 52, height: 52, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: .center),
-                        .glassConfig(GlassConfig(style: .regular, shape: .circle)),
+                        .glassConfig(GlassConfig(style: .regular, isInteractive: true, shape: .circle)),
                     ],
                     defaultChildren: [
                         ElementNode(name: "Icon", payload: .image(systemName: "plus", assetName: nil), modifiers: [
                             .frame(width: 22, height: 22, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: nil),
-                            .foregroundStyle(.system(.label))
                         ])
                     ]
                 ),
                 ComponentTemplate(
                     name: "Glass Pill Button",
                     icon: "capsule.fill",
-                    payload: .button(title: "Action", style: .glass),
+                    payload: .hStack(spacing: 8, alignment: .center),
                     defaultModifiers: [
                         .padding(edges: .horizontal, amount: 20),
                         .padding(edges: .vertical, amount: 12),
@@ -56,22 +55,21 @@ public enum ComponentCategory: String, CaseIterable, Identifiable {
                     defaultChildren: [
                         ElementNode(name: "Icon", payload: .image(systemName: "star.fill", assetName: nil), modifiers: [
                             .frame(width: 16, height: 16, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: nil),
-                            .foregroundStyle(.system(.label))
                         ]),
-                        ElementNode(name: "Label", payload: .text(content: "Action", style: .callout), modifiers: [
-                            .foregroundStyle(.system(.label))
-                        ])
+                        ElementNode(name: "Label", payload: .text(content: "Action", style: .callout))
                     ]
                 ),
                 ComponentTemplate(
                     name: "Glass Text Button",
                     icon: "textformat",
-                    payload: .button(title: "Button", style: .glassProminent),
+                    payload: .zStack(alignment: .center),
                     defaultModifiers: [
                         .padding(edges: .horizontal, amount: 24),
                         .padding(edges: .vertical, amount: 12),
                         .glassConfig(GlassConfig(style: .regular, isInteractive: true, shape: .capsule)),
-                        .foregroundStyle(.system(.label)),
+                    ],
+                    defaultChildren: [
+                        ElementNode(name: "Label", payload: .text(content: "Button", style: .body))
                     ]
                 ),
                 ComponentTemplate(

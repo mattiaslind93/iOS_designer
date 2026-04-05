@@ -719,7 +719,7 @@ struct EffectsSection: View {
             }
 
             // Liquid Glass detailed controls (shown when glass is active)
-            if element.glassStyle != nil {
+            if element.hasGlass {
                 GlassConfigSection(element: element, document: document)
             }
 
@@ -800,29 +800,6 @@ struct GlassConfigSection: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            // Shape (in: parameter)
-            HStack {
-                Text("Shape")
-                    .font(.caption)
-                Spacer()
-                Picker("", selection: Binding(
-                    get: { config.shape },
-                    set: { newShape in
-                        document.updateElement(element.id) { node in
-                            var c = node.glassConfig ?? .default
-                            c.shape = newShape
-                            node.setGlassConfig(c)
-                        }
-                    }
-                )) {
-                    ForEach(GlassShapeType.allCases, id: \.self) { shape in
-                        Text(shape.rawValue).tag(shape)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: 130)
-            }
-
             // Style (regular vs clear vs identity)
             HStack {
                 Text("Style")
@@ -843,11 +820,33 @@ struct GlassConfigSection: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 160)
+                .frame(width: 180)
             }
 
-            // Tint Color (.tint() modifier on Glass)
-            // Apple: "Tint must convey meaning (primary action, state), never decorative"
+            // Shape (in: parameter)
+            HStack {
+                Text("Shape")
+                    .font(.caption)
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { config.shape },
+                    set: { newShape in
+                        document.updateElement(element.id) { node in
+                            var c = node.glassConfig ?? .default
+                            c.shape = newShape
+                            node.setGlassConfig(c)
+                        }
+                    }
+                )) {
+                    ForEach(GlassShapeType.allCases, id: \.self) { shape in
+                        Text(shape.rawValue).tag(shape)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 140)
+            }
+
+            // Tint Color
             ColorPickerRow(
                 label: "Tint",
                 color: config.tintColor
@@ -874,8 +873,18 @@ struct GlassConfigSection: View {
                 }
             }
 
+            // Opacity — control glass element transparency
+            SliderRow(
+                label: "Opacity",
+                value: element.opacityValue,
+                range: 0...1
+            ) { newValue in
+                document.updateElement(element.id) { node in
+                    node.setOpacity(newValue)
+                }
+            }
+
             // Interactive (.interactive() modifier)
-            // Apple: enables press-scale, bounce, shimmer, touch-point illumination
             Toggle("Interactive", isOn: Binding(
                 get: { config.isInteractive },
                 set: { newValue in
@@ -975,8 +984,16 @@ extension ElementNode {
     var fontWeight: FontWeightType? {
         modifiers.compactMap { if case .font(_, _, let w, _) = $0 { return w } else { return nil } }.first
     }
+    /// Returns the active glass style from either .glassConfig or .glassEffect
     var glassStyle: GlassStyleType? {
-        modifiers.compactMap { if case .glassEffect(let s) = $0 { return s } else { return nil } }.first
+        // Check glassConfig first (preferred single source of truth)
+        if let config = glassConfig { return config.style }
+        // Fallback to standalone glassEffect
+        return modifiers.compactMap { if case .glassEffect(let s) = $0 { return s } else { return nil } }.first
+    }
+    /// True if any glass modifier is present
+    var hasGlass: Bool {
+        glassStyle != nil
     }
     var shadowRadius: CGFloat {
         modifiers.compactMap { if case .shadow(_, let r, _, _) = $0 { return r } else { return nil } }.first ?? 0
@@ -1048,9 +1065,16 @@ extension ElementNode {
     }
 
     mutating func setGlassEffect(_ style: GlassStyleType?) {
+        // Preserve existing config before removing
+        let existingConfig = glassConfig
+        // Remove ALL glass modifiers
         modifiers.removeAll { if case .glassEffect = $0 { return true } else { return false } }
+        modifiers.removeAll { if case .glassConfig = $0 { return true } else { return false } }
         if let style {
-            modifiers.append(.glassEffect(style))
+            // Use glassConfig as single source of truth, preserving tint/shape/interactive
+            var config = existingConfig ?? .default
+            config.style = style
+            modifiers.append(.glassConfig(config))
         }
     }
 
@@ -1175,9 +1199,8 @@ extension ElementNode {
 
     mutating func setGlassConfig(_ config: GlassConfig) {
         modifiers.removeAll { if case .glassConfig = $0 { return true } else { return false } }
-        // Also sync the glassEffect style
+        // Remove any standalone glassEffect — glassConfig is the single source of truth
         modifiers.removeAll { if case .glassEffect = $0 { return true } else { return false } }
-        modifiers.append(.glassEffect(config.style))
         modifiers.append(.glassConfig(config))
     }
 
