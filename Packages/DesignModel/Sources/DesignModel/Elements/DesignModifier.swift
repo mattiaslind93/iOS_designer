@@ -41,6 +41,7 @@ public enum DesignModifier: Codable, Hashable {
     case glassEffect(GlassStyleType)
     case glassConfig(GlassConfig)
     case glassEffectContainer
+    case carPaint(CarPaintConfig)
 
     // MARK: - Interaction
 
@@ -90,61 +91,113 @@ public enum MaterialType: String, Codable, Hashable, CaseIterable {
     case liquidGlass
 }
 
+/// Apple iOS 26 Liquid Glass styles.
+/// - `regular`: Default glass. Medium translucency, full adaptivity.
+/// - `clear`: High translucency, for media-rich backgrounds. Needs dimming layer.
+/// - `identity`: No visual effect (conditional disable without layout change).
 public enum GlassStyleType: String, Codable, Hashable, CaseIterable {
-    case regular, clear
-    case thin, ultraThin, thick, ultraThick
+    case regular
+    case clear
+    case identity
 }
 
-/// Liquid Glass behavior mode (iOS 26)
-public enum GlassBehaviorType: String, Codable, Hashable, CaseIterable {
-    case automatic = "Automatic"
-    case squishy = "Squishy"
-    case solid = "Solid"
-    case floating = "Floating"
+/// Glass effect shape for clipping the glass material
+public enum GlassShapeType: String, Codable, Hashable, CaseIterable {
+    case capsule    // default
+    case circle
+    case roundedRectangle
+    case rectangle
+    case ellipse
 }
 
-/// Extended Liquid Glass configuration for fine-grained control
+/// Liquid Glass configuration matching Apple's real API.
+///
+/// Maps to: `.glassEffect(.regular.tint(.orange).interactive(), in: .capsule)`
+/// - `style`: regular, clear, identity
+/// - `tintColor`: Semantic color (conveys meaning, not decorative)
+/// - `isInteractive`: Enables press-scale, bounce, shimmer, touch illumination
+/// - `shape`: Glass clipping shape (capsule default)
+/// - `containerSpacing`: If set, wraps in GlassEffectContainer(spacing:)
+///   Elements within this distance morph/blend together during animation
 public struct GlassConfig: Codable, Hashable {
     public var style: GlassStyleType
-    public var behavior: GlassBehaviorType
-    /// Refraction intensity 0.0–1.0
-    public var refractionIntensity: Double
-    /// Tint color intensity 0.0–1.0
-    public var tintIntensity: Double
-    /// Custom tint color (nil = auto from content)
     public var tintColor: DesignColor?
-    /// Specular highlight intensity 0.0–1.0
-    public var specularIntensity: Double
-    /// Background blur amount 0.0–1.0
-    public var blurAmount: Double
-    /// Shadow intensity 0.0–1.0
-    public var shadowIntensity: Double
-    /// Whether the glass is interactive (responds to press)
     public var isInteractive: Bool
+    public var shape: GlassShapeType
+    /// Spacing for GlassEffectContainer — elements within this distance merge
+    public var containerSpacing: CGFloat?
 
     public init(
         style: GlassStyleType = .regular,
-        behavior: GlassBehaviorType = .automatic,
-        refractionIntensity: Double = 0.5,
-        tintIntensity: Double = 0.3,
         tintColor: DesignColor? = nil,
-        specularIntensity: Double = 0.5,
-        blurAmount: Double = 0.5,
-        shadowIntensity: Double = 0.3,
-        isInteractive: Bool = false
+        isInteractive: Bool = false,
+        shape: GlassShapeType = .capsule,
+        containerSpacing: CGFloat? = nil
     ) {
         self.style = style
-        self.behavior = behavior
-        self.refractionIntensity = refractionIntensity
-        self.tintIntensity = tintIntensity
         self.tintColor = tintColor
-        self.specularIntensity = specularIntensity
-        self.blurAmount = blurAmount
-        self.shadowIntensity = shadowIntensity
         self.isInteractive = isInteractive
+        self.shape = shape
+        self.containerSpacing = containerSpacing
     }
 
     public static let `default` = GlassConfig()
+}
+
+// MARK: - Car Paint Material
+
+/// Car paint configuration for metallic clearcoat material.
+/// Rendered with 3 layers: base coat, metallic flake, clearcoat.
+/// Reacts to device motion (tilt) for realistic specular highlights.
+public struct CarPaintConfig: Codable, Hashable {
+    /// Base coat color (deep paint color)
+    public var baseColor: DesignColor
+    /// Metallic flake intensity 0.0–1.0
+    public var flakeIntensity: Double
+    /// Metallic flake scale (size of sparkle noise)
+    public var flakeScale: Double
+    /// Clearcoat intensity 0.0–1.0 (specular sharpness)
+    public var clearcoatIntensity: Double
+    /// Clearcoat sharpness 0.0–1.0 (how tight the spec highlight is)
+    public var clearcoatSharpness: Double
+    /// Fresnel edge brightening 0.0–1.0
+    public var fresnelIntensity: Double
+    /// Whether the material reacts to device tilt
+    public var reactsToMotion: Bool
+
+    public init(
+        baseColor: DesignColor = .custom(red: 0.7, green: 0.05, blue: 0.05, opacity: 1.0),
+        flakeIntensity: Double = 0.6,
+        flakeScale: Double = 0.5,
+        clearcoatIntensity: Double = 0.8,
+        clearcoatSharpness: Double = 0.7,
+        fresnelIntensity: Double = 0.4,
+        reactsToMotion: Bool = true
+    ) {
+        self.baseColor = baseColor
+        self.flakeIntensity = flakeIntensity
+        self.flakeScale = flakeScale
+        self.clearcoatIntensity = clearcoatIntensity
+        self.clearcoatSharpness = clearcoatSharpness
+        self.fresnelIntensity = fresnelIntensity
+        self.reactsToMotion = reactsToMotion
+    }
+
+    public static let ferrariRed = CarPaintConfig()
+    public static let midnightBlue = CarPaintConfig(
+        baseColor: .custom(red: 0.05, green: 0.08, blue: 0.25, opacity: 1.0)
+    )
+    public static let titaniumSilver = CarPaintConfig(
+        baseColor: .custom(red: 0.55, green: 0.56, blue: 0.58, opacity: 1.0),
+        flakeIntensity: 0.8, clearcoatIntensity: 0.9
+    )
+    public static let deepBlack = CarPaintConfig(
+        baseColor: .custom(red: 0.05, green: 0.05, blue: 0.07, opacity: 1.0),
+        flakeIntensity: 0.3, clearcoatIntensity: 0.95
+    )
+    public static let britishRacingGreen = CarPaintConfig(
+        baseColor: .custom(red: 0.0, green: 0.25, blue: 0.1, opacity: 1.0)
+    )
 }
 
 public enum TransitionType: String, Codable, Hashable, CaseIterable {

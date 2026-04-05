@@ -300,72 +300,250 @@ public struct ElementRenderer: View {
 
 // MARK: - Glass Background View (Liquid Glass approximation on macOS)
 
+/// Approximates iOS 26 Liquid Glass on macOS canvas.
+/// Uses layered translucent materials — no solid colored rectangles.
 struct GlassBackgroundView: View {
     var style: GlassStyleType = .regular
     var config: GlassConfig? = nil
 
-    private var effectiveBlur: Double {
-        config?.blurAmount ?? (style == .ultraThin ? 0.3 : style == .thin ? 0.4 : style == .clear ? 0.2 : 0.5)
+    private var effectiveStyle: GlassStyleType {
+        config?.style ?? style
     }
-    private var effectiveSpecular: Double {
-        config?.specularIntensity ?? 0.4
-    }
-    private var effectiveTint: Double {
-        config?.tintIntensity ?? 0.15
-    }
-    private var effectiveRefraction: Double {
-        config?.refractionIntensity ?? 0.5
-    }
-    private var effectiveShadow: Double {
-        config?.shadowIntensity ?? 0.3
-    }
-    private var tintColor: Color {
-        config?.tintColor?.swiftUIColor ?? .white
+    private var tintColor: Color? {
+        config?.tintColor?.swiftUIColor
     }
 
     var body: some View {
-        ZStack {
-            // Base material layer
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(effectiveBlur * 2.0)
+        if effectiveStyle == .identity {
+            Color.clear
+        } else {
+            ZStack {
+                // Layer 1: Frosted backdrop blur (the core of Liquid Glass)
+                // "clear" = more transparent, "regular" = more frosted
+                if effectiveStyle == .clear {
+                    Color.white.opacity(0.06)
+                        .background(.ultraThinMaterial)
+                } else {
+                    Color.clear
+                        .background(.thinMaterial)
+                }
 
-            // Refraction / distortion approximation
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(effectiveRefraction * 0.4),
-                            Color.white.opacity(effectiveRefraction * 0.05),
-                            Color.white.opacity(effectiveRefraction * 0.25)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+                // Layer 2: Subtle light-bending gradient (lensing effect)
+                LinearGradient(
+                    stops: [
+                        .init(color: Color.white.opacity(effectiveStyle == .clear ? 0.08 : 0.15), location: 0.0),
+                        .init(color: Color.white.opacity(0.02), location: 0.4),
+                        .init(color: Color.white.opacity(effectiveStyle == .clear ? 0.04 : 0.08), location: 1.0),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
                 )
 
-            // Tint layer
-            Rectangle()
-                .fill(tintColor.opacity(effectiveTint))
+                // Layer 3: Specular top-edge highlight (responds to light angle)
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(effectiveStyle == .clear ? 0.15 : 0.3),
+                            Color.clear
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 2)
+                    Spacer()
+                }
 
-            // Top highlight (specular)
-            VStack(spacing: 0) {
-                Rectangle()
-                    .fill(
+                // Layer 4: Tint color (semantic, like .glassEffect(.regular.tint(.orange)))
+                if let tint = tintColor {
+                    tint.opacity(0.15)
+                }
+
+                // Layer 5: Subtle inner border for edge definition
+                RoundedRectangle(cornerRadius: 0)
+                    .strokeBorder(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(effectiveSpecular * 0.8),
-                                Color.clear
+                                Color.white.opacity(0.25),
+                                Color.white.opacity(0.05),
+                                Color.white.opacity(0.1)
                             ],
                             startPoint: .top,
                             endPoint: .bottom
-                        )
+                        ),
+                        lineWidth: 0.5
                     )
-                    .frame(height: max(1, effectiveSpecular * 3))
-                Spacer()
             }
         }
-        .shadow(color: .black.opacity(effectiveShadow * 0.3), radius: effectiveShadow * 8, x: 0, y: effectiveShadow * 4)
+    }
+}
+
+// MARK: - Car Paint Material View
+
+/// Renders a 3-layer metallic car paint material:
+/// 1. Base coat (deep color with subtle variation)
+/// 2. Metallic flake layer (sparkle noise)
+/// 3. Clearcoat (sharp specular highlight that follows device tilt)
+struct CarPaintMaterialView: View {
+    let config: CarPaintConfig
+    @StateObject private var motion = MotionManager()
+
+    var body: some View {
+        GeometryReader { geo in
+            let size = geo.size
+            let tiltX = motion.tiltX
+            let tiltY = motion.tiltY
+
+            ZStack {
+                // Layer 1: Base coat — deep color with subtle metallic variation
+                config.baseColor.swiftUIColor
+
+                // Metallic color shift based on viewing angle (tilt)
+                RadialGradient(
+                    colors: [
+                        config.baseColor.swiftUIColor.opacity(0.0),
+                        config.baseColor.swiftUIColor.opacity(0.3),
+                    ],
+                    center: UnitPoint(
+                        x: 0.5 + tiltX * 0.3,
+                        y: 0.5 + tiltY * 0.3
+                    ),
+                    startRadius: 0,
+                    endRadius: max(size.width, size.height) * 0.8
+                )
+
+                // Layer 2: Metallic flake — high frequency sparkle
+                Canvas { context, canvasSize in
+                    let flakeCount = Int(config.flakeScale * 200 + 50)
+                    let intensity = config.flakeIntensity
+
+                    for i in 0..<flakeCount {
+                        // Deterministic pseudo-random positions
+                        let seed1 = Double(i) * 0.618033988749895
+                        let seed2 = Double(i) * 0.414213562373095
+                        let fx = (seed1 - Double(Int(seed1))) * canvasSize.width
+                        let fy = (seed2 - Double(Int(seed2))) * canvasSize.height
+
+                        // Flake brightness depends on angle to light (tilt)
+                        let dx = fx / canvasSize.width - 0.5 - tiltX * 0.4
+                        let dy = fy / canvasSize.height - 0.5 - tiltY * 0.4
+                        let dist = sqrt(dx * dx + dy * dy)
+                        let brightness = max(0, 1.0 - dist * 2.5) * intensity
+
+                        if brightness > 0.05 {
+                            let flakeSize: CGFloat = CGFloat.random(in: 0.5...2.0)
+                            let rect = CGRect(x: fx, y: fy, width: flakeSize, height: flakeSize)
+                            context.fill(
+                                Path(ellipseIn: rect),
+                                with: .color(Color.white.opacity(brightness * 0.6))
+                            )
+                        }
+                    }
+                }
+                .blendMode(.screen)
+
+                // Layer 3: Clearcoat — sharp specular highlight that tracks tilt
+                let specX = 0.5 + tiltX * 0.6
+                let specY = 0.3 + tiltY * 0.5
+                RadialGradient(
+                    colors: [
+                        Color.white.opacity(config.clearcoatIntensity * 0.7),
+                        Color.white.opacity(config.clearcoatIntensity * 0.15),
+                        Color.clear,
+                    ],
+                    center: UnitPoint(x: specX, y: specY),
+                    startRadius: 0,
+                    endRadius: max(size.width, size.height) * (1.0 - config.clearcoatSharpness * 0.6)
+                )
+                .blendMode(.screen)
+
+                // Fresnel edge brightening
+                if config.fresnelIntensity > 0 {
+                    RoundedRectangle(cornerRadius: 0)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(config.fresnelIntensity * 0.3),
+                                    Color.white.opacity(config.fresnelIntensity * 0.15),
+                                    Color.white.opacity(config.fresnelIntensity * 0.25),
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1.5
+                        )
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Motion Manager (Core Motion for device tilt)
+
+import Combine
+
+#if canImport(CoreMotion)
+import CoreMotion
+#endif
+
+class MotionManager: ObservableObject {
+    @Published var tiltX: Double = 0.0
+    @Published var tiltY: Double = 0.0
+
+    #if canImport(CoreMotion) && os(iOS)
+    private let manager = CMMotionManager()
+    #endif
+
+    // Mouse tracking for macOS preview
+    private var mouseTracker: Any? = nil
+
+    init() {
+        startMotionUpdates()
+    }
+
+    private func startMotionUpdates() {
+        #if canImport(CoreMotion) && os(iOS)
+        guard manager.isDeviceMotionAvailable else {
+            startMouseTracking()
+            return
+        }
+        manager.deviceMotionUpdateInterval = 1.0 / 60.0
+        manager.startDeviceMotionUpdates(to: .main) { [weak self] motion, _ in
+            guard let motion = motion else { return }
+            withAnimation(.interactiveSpring) {
+                self?.tiltX = motion.gravity.x
+                self?.tiltY = motion.gravity.y
+            }
+        }
+        #else
+        startMouseTracking()
+        #endif
+    }
+
+    private func startMouseTracking() {
+        #if os(macOS)
+        // On macOS, use mouse position as tilt proxy for live preview
+        mouseTracker = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+            guard let screen = NSScreen.main else { return event }
+            let pos = event.locationInWindow
+            let screenSize = screen.frame.size
+            DispatchQueue.main.async {
+                self?.tiltX = (pos.x / screenSize.width - 0.5) * 2.0
+                self?.tiltY = (pos.y / screenSize.height - 0.5) * -2.0
+            }
+            return event
+        }
+        #endif
+    }
+
+    deinit {
+        #if canImport(CoreMotion) && os(iOS)
+        manager.stopDeviceMotionUpdates()
+        #endif
+        #if os(macOS)
+        if let tracker = mouseTracker {
+            NSEvent.removeMonitor(tracker)
+        }
+        #endif
     }
 }
 
@@ -439,6 +617,9 @@ extension View {
 
         case .glassEffectContainer:
             self.background(GlassBackgroundView())
+
+        case .carPaint(let config):
+            self.overlay(CarPaintMaterialView(config: config))
 
         case .offset(let x, let y):
             self.offset(x: x, y: y)

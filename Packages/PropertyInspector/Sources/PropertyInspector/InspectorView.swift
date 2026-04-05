@@ -97,6 +97,12 @@ struct ElementSection: View {
     let element: ElementNode
     @ObservedObject var document: DesignDocument
 
+    // Local state for text fields — avoids the stale-capture binding issue
+    @State private var textContent: String = ""
+    @State private var buttonTitle: String = ""
+    @State private var sfSymbolName: String = ""
+    @State private var toggleLabel: String = ""
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Element")
@@ -106,51 +112,94 @@ struct ElementSection: View {
             switch element.payload {
             case .text(let content, _):
                 LabeledContent("Content") {
-                    TextField("Text", text: Binding(
-                        get: { content },
-                        set: { newContent in
+                    TextField("Text", text: $textContent)
+                        .textFieldStyle(.roundedBorder)
+                        .onAppear { textContent = content }
+                        .onChange(of: textContent) { _, newValue in
                             document.updateElement(element.id) { node in
                                 if case .text(_, let style) = node.payload {
-                                    node.payload = .text(content: newContent, style: style)
+                                    node.payload = .text(content: newValue, style: style)
                                 }
                             }
                         }
-                    ))
-                    .textFieldStyle(.roundedBorder)
+                        .onChange(of: element.id) { _, _ in
+                            if case .text(let c, _) = element.payload { textContent = c }
+                        }
                 }
             case .button(let title, _):
                 LabeledContent("Title") {
-                    TextField("Title", text: Binding(
-                        get: { title },
-                        set: { newTitle in
+                    TextField("Title", text: $buttonTitle)
+                        .textFieldStyle(.roundedBorder)
+                        .onAppear { buttonTitle = title }
+                        .onChange(of: buttonTitle) { _, newValue in
                             document.updateElement(element.id) { node in
                                 if case .button(_, let style) = node.payload {
-                                    node.payload = .button(title: newTitle, style: style)
+                                    node.payload = .button(title: newValue, style: style)
                                 }
                             }
                         }
-                    ))
-                    .textFieldStyle(.roundedBorder)
+                        .onChange(of: element.id) { _, _ in
+                            if case .button(let t, _) = element.payload { buttonTitle = t }
+                        }
                 }
             case .image(let systemName, _):
                 LabeledContent("SF Symbol") {
-                    TextField("Symbol name", text: Binding(
-                        get: { systemName ?? "" },
-                        set: { newName in
+                    TextField("Symbol name", text: $sfSymbolName)
+                        .textFieldStyle(.roundedBorder)
+                        .onAppear { sfSymbolName = systemName ?? "" }
+                        .onChange(of: sfSymbolName) { _, newValue in
                             document.updateElement(element.id) { node in
-                                node.payload = .image(systemName: newName.isEmpty ? nil : newName, assetName: nil)
+                                node.payload = .image(systemName: newValue.isEmpty ? nil : newValue, assetName: nil)
+                            }
+                        }
+                        .onChange(of: element.id) { _, _ in
+                            if case .image(let s, _) = element.payload { sfSymbolName = s ?? "" }
+                        }
+                }
+            case .toggle(let label, let isOn):
+                LabeledContent("Label") {
+                    TextField("Label", text: $toggleLabel)
+                        .textFieldStyle(.roundedBorder)
+                        .onAppear { toggleLabel = label }
+                        .onChange(of: toggleLabel) { _, newValue in
+                            document.updateElement(element.id) { node in
+                                node.payload = .toggle(label: newValue, isOn: isOn)
+                            }
+                        }
+                        .onChange(of: element.id) { _, _ in
+                            if case .toggle(let l, _) = element.payload { toggleLabel = l }
+                        }
+                }
+            case .textField(let placeholder):
+                LabeledContent("Placeholder") {
+                    TextField("Placeholder", text: Binding(
+                        get: { placeholder },
+                        set: { newP in
+                            document.updateElement(element.id) { node in
+                                node.payload = .textField(placeholder: newP)
                             }
                         }
                     ))
                     .textFieldStyle(.roundedBorder)
                 }
-            case .toggle(let label, let isOn):
-                LabeledContent("Label") {
+            case .label(let title, let systemImage):
+                LabeledContent("Title") {
                     TextField("Label", text: Binding(
-                        get: { label },
-                        set: { newLabel in
+                        get: { title },
+                        set: { newT in
                             document.updateElement(element.id) { node in
-                                node.payload = .toggle(label: newLabel, isOn: isOn)
+                                node.payload = .label(title: newT, systemImage: systemImage)
+                            }
+                        }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                }
+                LabeledContent("Icon") {
+                    TextField("SF Symbol", text: Binding(
+                        get: { systemImage },
+                        set: { newI in
+                            document.updateElement(element.id) { node in
+                                node.payload = .label(title: title, systemImage: newI)
                             }
                         }
                     ))
@@ -264,29 +313,39 @@ struct AppearanceSection: View {
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
 
-            // Foreground color
+            // Tint color — the single color control
             ColorPickerRow(
-                label: "Foreground",
-                color: element.foregroundColor ?? .system(.label)
+                label: "Tint",
+                color: element.tintColorValue
             ) { newColor in
-                if let c = newColor {
-                    document.updateElement(element.id) { node in
-                        node.setForegroundColor(c)
-                    }
+                document.updateElement(element.id) { node in
+                    node.setTintColor(newColor)
                 }
             }
 
-            // Background color
-            ColorPickerRow(
-                label: "Background",
-                color: element.backgroundColor
-            ) { newColor in
-                document.updateElement(element.id) { node in
-                    if let c = newColor {
-                        node.setBackgroundColor(c)
-                    } else {
-                        node.removeBackground()
+            // Fill mode for shapes
+            if element.payload.isShape {
+                HStack {
+                    Text("Fill")
+                        .font(.callout)
+                    Spacer()
+                    Picker("", selection: Binding(
+                        get: { element.fillMode },
+                        set: { newMode in
+                            document.updateElement(element.id) { node in
+                                node.setFillMode(newMode)
+                            }
+                        }
+                    )) {
+                        Text("Solid Color").tag(FillMode.solidColor)
+                        Text("Car Paint").tag(FillMode.carPaint)
                     }
+                    .pickerStyle(.menu)
+                    .frame(width: 130)
+                }
+
+                if element.fillMode == .carPaint {
+                    CarPaintSection(element: element, document: document)
                 }
             }
 
@@ -354,6 +413,124 @@ struct AppearanceSection: View {
             }
             .font(.callout)
         }
+    }
+}
+
+// MARK: - Fill Mode
+
+enum FillMode: String {
+    case solidColor
+    case carPaint
+}
+
+// MARK: - Car Paint Section
+
+struct CarPaintSection: View {
+    let element: ElementNode
+    @ObservedObject var document: DesignDocument
+
+    private var config: CarPaintConfig {
+        element.carPaintConfig ?? .ferrariRed
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Car Paint Material")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            // Presets
+            HStack(spacing: 6) {
+                paintPresetButton("Ferrari", config: .ferrariRed)
+                paintPresetButton("Midnight", config: .midnightBlue)
+                paintPresetButton("Silver", config: .titaniumSilver)
+                paintPresetButton("Black", config: .deepBlack)
+                paintPresetButton("BRG", config: .britishRacingGreen)
+            }
+
+            // Base color
+            ColorPickerRow(label: "Base Color", color: config.baseColor) { newColor in
+                if let c = newColor {
+                    document.updateElement(element.id) { node in
+                        var cfg = node.carPaintConfig ?? .ferrariRed
+                        cfg.baseColor = c
+                        node.setCarPaint(cfg)
+                    }
+                }
+            }
+
+            SliderRow(label: "Flake", value: config.flakeIntensity) { v in
+                document.updateElement(element.id) { node in
+                    var cfg = node.carPaintConfig ?? .ferrariRed
+                    cfg.flakeIntensity = v
+                    node.setCarPaint(cfg)
+                }
+            }
+
+            SliderRow(label: "Flake Size", value: config.flakeScale) { v in
+                document.updateElement(element.id) { node in
+                    var cfg = node.carPaintConfig ?? .ferrariRed
+                    cfg.flakeScale = v
+                    node.setCarPaint(cfg)
+                }
+            }
+
+            SliderRow(label: "Clearcoat", value: config.clearcoatIntensity) { v in
+                document.updateElement(element.id) { node in
+                    var cfg = node.carPaintConfig ?? .ferrariRed
+                    cfg.clearcoatIntensity = v
+                    node.setCarPaint(cfg)
+                }
+            }
+
+            SliderRow(label: "Sharpness", value: config.clearcoatSharpness) { v in
+                document.updateElement(element.id) { node in
+                    var cfg = node.carPaintConfig ?? .ferrariRed
+                    cfg.clearcoatSharpness = v
+                    node.setCarPaint(cfg)
+                }
+            }
+
+            SliderRow(label: "Fresnel", value: config.fresnelIntensity) { v in
+                document.updateElement(element.id) { node in
+                    var cfg = node.carPaintConfig ?? .ferrariRed
+                    cfg.fresnelIntensity = v
+                    node.setCarPaint(cfg)
+                }
+            }
+
+            Toggle("Reacts to Motion", isOn: Binding(
+                get: { config.reactsToMotion },
+                set: { v in
+                    document.updateElement(element.id) { node in
+                        var cfg = node.carPaintConfig ?? .ferrariRed
+                        cfg.reactsToMotion = v
+                        node.setCarPaint(cfg)
+                    }
+                }
+            ))
+            .toggleStyle(.checkbox)
+            .font(.caption)
+        }
+        .padding(8)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func paintPresetButton(_ name: String, config preset: CarPaintConfig) -> some View {
+        Button {
+            document.updateElement(element.id) { node in
+                node.setCarPaint(preset)
+            }
+        } label: {
+            Circle()
+                .fill(preset.baseColor.swiftUIColor)
+                .frame(width: 22, height: 22)
+                .overlay {
+                    Circle().stroke(Color.white.opacity(0.3), lineWidth: 0.5)
+                }
+        }
+        .buttonStyle(.plain)
+        .help(name)
     }
 }
 
@@ -607,7 +784,7 @@ struct EffectsSection: View {
     }
 }
 
-// MARK: - Liquid Glass Config Section
+// MARK: - Liquid Glass Config Section (matches Apple's real API)
 
 struct GlassConfigSection: View {
     let element: ElementNode
@@ -623,50 +800,33 @@ struct GlassConfigSection: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            // Behavior
+            // Shape (in: parameter)
             HStack {
-                Text("Behavior")
+                Text("Shape")
                     .font(.caption)
                 Spacer()
                 Picker("", selection: Binding(
-                    get: { config.behavior },
-                    set: { newBehavior in
+                    get: { config.shape },
+                    set: { newShape in
                         document.updateElement(element.id) { node in
                             var c = node.glassConfig ?? .default
-                            c.behavior = newBehavior
+                            c.shape = newShape
                             node.setGlassConfig(c)
                         }
                     }
                 )) {
-                    ForEach(GlassBehaviorType.allCases, id: \.self) { behavior in
-                        Text(behavior.rawValue).tag(behavior)
+                    ForEach(GlassShapeType.allCases, id: \.self) { shape in
+                        Text(shape.rawValue).tag(shape)
                     }
                 }
                 .pickerStyle(.menu)
-                .frame(width: 120)
+                .frame(width: 130)
             }
 
-            // Refraction
-            SliderRow(label: "Refraction", value: config.refractionIntensity) { newValue in
-                document.updateElement(element.id) { node in
-                    var c = node.glassConfig ?? .default
-                    c.refractionIntensity = newValue
-                    node.setGlassConfig(c)
-                }
-            }
-
-            // Tint Intensity
-            SliderRow(label: "Tint", value: config.tintIntensity) { newValue in
-                document.updateElement(element.id) { node in
-                    var c = node.glassConfig ?? .default
-                    c.tintIntensity = newValue
-                    node.setGlassConfig(c)
-                }
-            }
-
-            // Tint Color
+            // Tint Color (.tint() modifier on Glass)
+            // Apple: "Tint must convey meaning (primary action, state), never decorative"
             ColorPickerRow(
-                label: "Tint Color",
+                label: "Tint",
                 color: config.tintColor
             ) { newColor in
                 document.updateElement(element.id) { node in
@@ -676,34 +836,8 @@ struct GlassConfigSection: View {
                 }
             }
 
-            // Specular
-            SliderRow(label: "Specular", value: config.specularIntensity) { newValue in
-                document.updateElement(element.id) { node in
-                    var c = node.glassConfig ?? .default
-                    c.specularIntensity = newValue
-                    node.setGlassConfig(c)
-                }
-            }
-
-            // Blur Amount
-            SliderRow(label: "Blur", value: config.blurAmount) { newValue in
-                document.updateElement(element.id) { node in
-                    var c = node.glassConfig ?? .default
-                    c.blurAmount = newValue
-                    node.setGlassConfig(c)
-                }
-            }
-
-            // Shadow Intensity
-            SliderRow(label: "Shadow", value: config.shadowIntensity) { newValue in
-                document.updateElement(element.id) { node in
-                    var c = node.glassConfig ?? .default
-                    c.shadowIntensity = newValue
-                    node.setGlassConfig(c)
-                }
-            }
-
-            // Interactive toggle
+            // Interactive (.interactive() modifier)
+            // Apple: enables press-scale, bounce, shimmer, touch-point illumination
             Toggle("Interactive", isOn: Binding(
                 get: { config.isInteractive },
                 set: { newValue in
@@ -716,6 +850,54 @@ struct GlassConfigSection: View {
             ))
             .toggleStyle(.checkbox)
             .font(.caption)
+
+            // Container Spacing (GlassEffectContainer)
+            // Apple: Elements within this distance morph/blend together
+            HStack {
+                Text("Container")
+                    .font(.caption)
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { config.containerSpacing != nil },
+                    set: { enabled in
+                        document.updateElement(element.id) { node in
+                            var c = node.glassConfig ?? .default
+                            c.containerSpacing = enabled ? 30 : nil
+                            node.setGlassConfig(c)
+                        }
+                    }
+                ))
+                .toggleStyle(.checkbox)
+            }
+
+            if config.containerSpacing != nil {
+                HStack {
+                    Text("Merge Distance")
+                        .font(.caption)
+                    Spacer()
+                    Slider(
+                        value: Binding(
+                            get: { Double(config.containerSpacing ?? 30) },
+                            set: { newValue in
+                                document.updateElement(element.id) { node in
+                                    var c = node.glassConfig ?? .default
+                                    c.containerSpacing = CGFloat(newValue)
+                                    node.setGlassConfig(c)
+                                }
+                            }
+                        ),
+                        in: 0...100
+                    )
+                    .frame(width: 80)
+                    Text("\(Int(config.containerSpacing ?? 30))pt")
+                        .font(.caption2)
+                        .frame(width: 34)
+                }
+
+                Text("Glass children within this distance will morph and blend together during animations.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(8)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
@@ -904,36 +1086,34 @@ extension ElementNode {
         }
     }
 
-    // MARK: - Color Properties
+    // MARK: - Tint Color (single color control)
 
-    var foregroundColor: DesignColor? {
-        modifiers.compactMap { if case .foregroundStyle(let c) = $0 { return c } else { return nil } }.first
+    /// Gets the effective tint color — checks tint modifier first, then foregroundStyle
+    var tintColorValue: DesignColor? {
+        // Check for .tint modifier
+        if let tint = modifiers.compactMap({ if case .tint(let c) = $0 { return c } else { return nil } }).first {
+            return tint
+        }
+        // Fallback to foregroundStyle
+        return modifiers.compactMap { if case .foregroundStyle(let c) = $0 { return c } else { return nil } }.first
     }
 
-    var backgroundColor: DesignColor? {
-        modifiers.compactMap { if case .background(let c) = $0 { return c } else { return nil } }.first
+    /// Sets tint color — updates both .tint and .foregroundStyle for visual consistency
+    mutating func setTintColor(_ color: DesignColor?) {
+        // Remove existing tint and foreground
+        modifiers.removeAll { mod in
+            if case .tint = mod { return true }
+            if case .foregroundStyle = mod { return true }
+            return false
+        }
+        if let color {
+            modifiers.append(.tint(color))
+            modifiers.append(.foregroundStyle(color))
+        }
     }
 
     var shadowColor: DesignColor? {
         modifiers.compactMap { if case .shadow(let c, _, _, _) = $0 { return c } else { return nil } }.first
-    }
-
-    mutating func setForegroundColor(_ color: DesignColor) {
-        updateOrAddModifier { mod in
-            if case .foregroundStyle = mod { return .foregroundStyle(color) }
-            return nil
-        } fallback: { .foregroundStyle(color) }
-    }
-
-    mutating func setBackgroundColor(_ color: DesignColor) {
-        updateOrAddModifier { mod in
-            if case .background = mod { return .background(color) }
-            return nil
-        } fallback: { .background(color) }
-    }
-
-    mutating func removeBackground() {
-        modifiers.removeAll { if case .background = $0 { return true } else { return false } }
     }
 
     mutating func setShadowColor(_ color: DesignColor) {
@@ -941,6 +1121,37 @@ extension ElementNode {
             if case .shadow(_, let r, let x, let y) = mod { return .shadow(color: color, radius: r, x: x, y: y) }
             return nil
         } fallback: { .shadow(color: color, radius: 4, x: 0, y: 2) }
+    }
+
+    // MARK: - Fill Mode (for shapes)
+
+    var fillMode: FillMode {
+        for mod in modifiers {
+            if case .carPaint = mod { return .carPaint }
+        }
+        return .solidColor
+    }
+
+    mutating func setFillMode(_ mode: FillMode) {
+        switch mode {
+        case .solidColor:
+            modifiers.removeAll { if case .carPaint = $0 { return true } else { return false } }
+        case .carPaint:
+            if carPaintConfig == nil {
+                modifiers.append(.carPaint(.ferrariRed))
+            }
+        }
+    }
+
+    // MARK: - Car Paint
+
+    var carPaintConfig: CarPaintConfig? {
+        modifiers.compactMap { if case .carPaint(let c) = $0 { return c } else { return nil } }.first
+    }
+
+    mutating func setCarPaint(_ config: CarPaintConfig) {
+        modifiers.removeAll { if case .carPaint = $0 { return true } else { return false } }
+        modifiers.append(.carPaint(config))
     }
 
     // MARK: - Offset Properties
@@ -1000,6 +1211,13 @@ extension ElementPayload {
     var hasTextProperties: Bool {
         switch self {
         case .text, .button, .label: return true
+        default: return false
+        }
+    }
+
+    var isShape: Bool {
+        switch self {
+        case .rectangle, .circle, .roundedRectangle, .capsule, .color: return true
         default: return false
         }
     }

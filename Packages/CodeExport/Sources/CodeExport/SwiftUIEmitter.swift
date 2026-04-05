@@ -149,10 +149,21 @@ public struct SwiftUIEmitter {
         case .glassEffect(let style):
             return ".glassEffect(.\(style.rawValue))"
         case .glassConfig(let config):
-            // Export as glassEffect with style — detailed config is design-time only
-            return ".glassEffect(.\(config.style.rawValue))"
+            // Export full glassEffect chain
+            var code = ".glassEffect(.\(config.style.rawValue)"
+            if let tint = config.tintColor {
+                code += ".tint(\(emitColor(tint)))"
+            }
+            if config.isInteractive {
+                code += ".interactive()"
+            }
+            code += ", in: .\(config.shape.rawValue)"
+            code += ")"
+            return code
         case .glassEffectContainer:
             return "" // Applied at container level
+        case .carPaint:
+            return "// Car paint material (requires CarPaintView)"
         case .offset(let x, let y):
             return ".offset(x: \(Int(x)), y: \(Int(y)))"
         case .rotationEffect(let degrees):
