@@ -92,7 +92,17 @@ public struct SwiftUIEmitter {
         case .tabView:             return "TabView"
         case .sheet:               return "// Sheet"
         case .button(let title, let style):
-            return "Button(\"\(title)\")"
+            let styleStr: String
+            switch style {
+            case .automatic: styleStr = ""
+            case .borderedProminent: styleStr = "\n    .buttonStyle(.borderedProminent)"
+            case .bordered: styleStr = "\n    .buttonStyle(.bordered)"
+            case .borderless: styleStr = "\n    .buttonStyle(.borderless)"
+            case .plain: styleStr = "\n    .buttonStyle(.plain)"
+            case .glass: styleStr = "\n    .buttonStyle(.glass)"
+            case .glassProminent: styleStr = "\n    .buttonStyle(.glassProminent)"
+            }
+            return "Button(\"\(title)\") { }\(styleStr)"
         case .textField(let p):    return "TextField(\"\(p)\", text: .constant(\"\"))"
         case .secureField(let p):  return "SecureField(\"\(p)\", text: .constant(\"\"))"
         case .toggle(let l, let v): return "Toggle(\"\(l)\", isOn: .constant(\(v)))"

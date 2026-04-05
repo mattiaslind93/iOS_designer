@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "ComponentLibrary",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS("26.0")],
     products: [
         .library(name: "ComponentLibrary", targets: ["ComponentLibrary"]),
     ],

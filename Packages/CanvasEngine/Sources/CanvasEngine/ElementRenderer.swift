@@ -190,7 +190,7 @@ public struct ElementRenderer: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(GlassBackgroundView())
+                .glassEffect(.regular, in: .rect)
                 renderChildren()
                 Spacer()
             }
@@ -214,8 +214,7 @@ public struct ElementRenderer: View {
                 }
                 .padding(.vertical, 10)
                 .padding(.horizontal, 16)
-                .background(GlassBackgroundView())
-                .clipShape(Capsule())
+                .glassEffect(.regular, in: .capsule)
                 .padding(.horizontal, 40)
                 .padding(.bottom, 8)
             }
@@ -239,6 +238,10 @@ public struct ElementRenderer: View {
                 Button(title) {}.buttonStyle(.plain)
             case .automatic:
                 Button(title) {}.buttonStyle(.automatic)
+            case .glass:
+                Button(title) {}.buttonStyle(.glass)
+            case .glassProminent:
+                Button(title) {}.buttonStyle(.glassProminent)
             }
         case .textField(let placeholder):
             TextField(placeholder, text: .constant(""))
@@ -304,79 +307,6 @@ public struct ElementRenderer: View {
                 onSelect: onSelect,
                 onMove: onMove
             )
-        }
-    }
-}
-
-// MARK: - Glass Background View (Liquid Glass approximation on macOS)
-
-/// Approximates iOS 26 Liquid Glass on macOS canvas.
-/// Pure Canvas-drawn — NO SwiftUI materials (they render as opaque blue on macOS).
-///
-/// Style differences:
-/// - `regular`: Frosted, more opaque, stronger specular. For navigation/toolbars.
-/// - `clear`: Very transparent, subtle. For media-rich backgrounds.
-/// - `identity`: Invisible (no glass effect applied).
-struct GlassBackgroundView: View {
-    var style: GlassStyleType = .regular
-    var config: GlassConfig? = nil
-
-    private var effectiveStyle: GlassStyleType {
-        config?.style ?? style
-    }
-    private var tintColor: Color? {
-        config?.tintColor?.swiftUIColor
-    }
-    private var tintIntensity: Double {
-        config?.tintIntensity ?? 0.3
-    }
-
-    var body: some View {
-        if effectiveStyle == .identity {
-            Color.clear
-        } else {
-            let isClear = effectiveStyle == .clear
-            // Frosting (base opacity): regular = thick frost, clear = barely there
-            let frost: Double = isClear ? 0.06 : 0.22
-            // Specular strength
-            let spec: Double = isClear ? 0.12 : 0.35
-            // Edge visibility
-            let edge: Double = isClear ? 0.06 : 0.18
-
-            Canvas { context, size in
-                let rect = CGRect(origin: .zero, size: size)
-
-                // 1. Base frost fill
-                context.fill(Path(rect), with: .color(Color.white.opacity(frost)))
-
-                // 2. Tint color fill (intensity-controllable)
-                if let tint = tintColor, tintIntensity > 0.01 {
-                    context.fill(Path(rect), with: .color(tint.opacity(tintIntensity)))
-                }
-
-                // 3. Lensing gradient — light concentration top-left to bottom-right
-                let lensGrad = Gradient(stops: [
-                    .init(color: Color.white.opacity(frost * 0.6), location: 0.0),
-                    .init(color: Color.clear, location: 0.4),
-                    .init(color: Color.white.opacity(frost * 0.3), location: 1.0),
-                ])
-                context.fill(
-                    Path(rect),
-                    with: .linearGradient(lensGrad, startPoint: .zero, endPoint: CGPoint(x: size.width, y: size.height))
-                )
-
-                // 4. Specular top-edge highlight (like light hitting glass from above)
-                let specRect = CGRect(x: 0, y: 0, width: size.width, height: max(2, size.height * 0.06))
-                let specGrad = Gradient(colors: [Color.white.opacity(spec), Color.clear])
-                context.fill(
-                    Path(specRect),
-                    with: .linearGradient(specGrad, startPoint: .zero, endPoint: CGPoint(x: 0, y: specRect.height))
-                )
-
-                // 5. Edge border (all sides) — defines the glass shape
-                let borderPath = Path(rect.insetBy(dx: 0.25, dy: 0.25))
-                context.stroke(borderPath, with: .color(Color.white.opacity(edge)), lineWidth: 0.5)
-            }
         }
     }
 }
@@ -683,14 +613,22 @@ extension View {
             self.blur(radius: radius)
 
         case .glassEffect(let style):
-            // Liquid Glass approximation on macOS canvas
-            self.background(GlassBackgroundView(style: style))
+            // Real macOS 26 Liquid Glass
+            switch style {
+            case .regular:
+                self.glassEffect(.regular, in: .capsule)
+            case .clear:
+                self.glassEffect(.clear, in: .capsule)
+            case .identity:
+                self.glassEffect(.identity, in: .capsule)
+            }
 
         case .glassConfig(let config):
-            self.background(GlassBackgroundView(config: config))
+            // Full Liquid Glass config with tint, interactivity, shape
+            self.applyGlassConfig(config)
 
         case .glassEffectContainer:
-            self.background(GlassBackgroundView())
+            self.glassEffect(.regular, in: .capsule)
 
         case .carPaint(let config):
             self.overlay(CarPaintMaterialView(config: config))
@@ -742,5 +680,42 @@ extension View {
             weight: weight?.swiftUIValue ?? .regular,
             design: design?.swiftUIValue ?? .default
         )
+    }
+
+    // MARK: - Real Liquid Glass helpers
+
+    /// Apply a full GlassConfig using the real macOS 26 `.glassEffect()` API.
+    @ViewBuilder
+    func applyGlassConfig(_ config: GlassConfig) -> some View {
+        let glass = Self.buildGlass(config)
+        switch config.shape {
+        case .capsule:
+            self.glassEffect(glass, in: .capsule)
+        case .circle:
+            self.glassEffect(glass, in: .circle)
+        case .roundedRectangle:
+            self.glassEffect(glass, in: .rect(cornerRadius: 12))
+        case .rectangle:
+            self.glassEffect(glass, in: .rect)
+        case .ellipse:
+            self.glassEffect(glass, in: .ellipse)
+        }
+    }
+
+    /// Build a `Glass` value from our config, with tint + interactive chaining.
+    private static func buildGlass(_ config: GlassConfig) -> Glass {
+        var glass: Glass
+        switch config.style {
+        case .regular: glass = .regular
+        case .clear: glass = .clear
+        case .identity: glass = .identity
+        }
+        if let tint = config.tintColor {
+            glass = glass.tint(tint.swiftUIColor.opacity(config.tintIntensity))
+        }
+        if config.isInteractive {
+            glass = glass.interactive()
+        }
+        return glass
     }
 }

@@ -32,11 +32,10 @@ public enum ComponentCategory: String, CaseIterable, Identifiable {
                 ComponentTemplate(
                     name: "Glass Circle Button",
                     icon: "circle.fill",
-                    payload: .button(title: "", style: .borderless),
+                    payload: .button(title: "Add", style: .glass),
                     defaultModifiers: [
                         .frame(width: 52, height: 52, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: .center),
-                        .glassEffect(.regular),
-                        .clipShape(.circle),
+                        .glassConfig(GlassConfig(style: .regular, shape: .circle)),
                     ],
                     defaultChildren: [
                         ElementNode(name: "Icon", payload: .image(systemName: "plus", assetName: nil), modifiers: [
@@ -48,12 +47,11 @@ public enum ComponentCategory: String, CaseIterable, Identifiable {
                 ComponentTemplate(
                     name: "Glass Pill Button",
                     icon: "capsule.fill",
-                    payload: .hStack(spacing: 8, alignment: .center),
+                    payload: .button(title: "Action", style: .glass),
                     defaultModifiers: [
                         .padding(edges: .horizontal, amount: 20),
                         .padding(edges: .vertical, amount: 12),
-                        .glassEffect(.regular),
-                        .clipShape(.capsule),
+                        .glassConfig(GlassConfig(style: .regular, isInteractive: true, shape: .capsule)),
                     ],
                     defaultChildren: [
                         ElementNode(name: "Icon", payload: .image(systemName: "star.fill", assetName: nil), modifiers: [
@@ -68,12 +66,11 @@ public enum ComponentCategory: String, CaseIterable, Identifiable {
                 ComponentTemplate(
                     name: "Glass Text Button",
                     icon: "textformat",
-                    payload: .text(content: "Button", style: .body),
+                    payload: .button(title: "Button", style: .glassProminent),
                     defaultModifiers: [
                         .padding(edges: .horizontal, amount: 24),
                         .padding(edges: .vertical, amount: 12),
-                        .glassEffect(.regular),
-                        .clipShape(.capsule),
+                        .glassConfig(GlassConfig(style: .regular, isInteractive: true, shape: .capsule)),
                         .foregroundStyle(.system(.label)),
                     ]
                 ),
@@ -83,8 +80,7 @@ public enum ComponentCategory: String, CaseIterable, Identifiable {
                     payload: .vStack(spacing: 12, alignment: .leading),
                     defaultModifiers: [
                         .padding(edges: .all, amount: 16),
-                        .glassEffect(.regular),
-                        .cornerRadius(16),
+                        .glassConfig(GlassConfig(style: .regular, shape: .roundedRectangle)),
                     ],
                     defaultChildren: [
                         ElementNode(name: "Title", payload: .text(content: "Card Title", style: .headline)),
@@ -100,8 +96,7 @@ public enum ComponentCategory: String, CaseIterable, Identifiable {
                     defaultModifiers: [
                         .padding(edges: .horizontal, amount: 24),
                         .padding(edges: .vertical, amount: 12),
-                        .glassEffect(.regular),
-                        .clipShape(.capsule),
+                        .glassConfig(GlassConfig(style: .regular, shape: .capsule)),
                     ],
                     defaultChildren: [
                         ElementNode(name: "Item 1", payload: .image(systemName: "house.fill", assetName: nil), modifiers: [
@@ -124,8 +119,7 @@ public enum ComponentCategory: String, CaseIterable, Identifiable {
                     payload: .zStack(alignment: .center),
                     defaultModifiers: [
                         .frame(width: 60, height: 60, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: .center),
-                        .glassEffect(.regular),
-                        .clipShape(.circle),
+                        .glassConfig(GlassConfig(style: .regular, isInteractive: true, shape: .circle)),
                         .shadow(color: .custom(red: 0, green: 0, blue: 0, opacity: 0.15), radius: 8, x: 0, y: 4),
                     ],
                     defaultChildren: [
@@ -144,8 +138,7 @@ public enum ComponentCategory: String, CaseIterable, Identifiable {
                         .padding(edges: .horizontal, amount: 16),
                         .padding(edges: .vertical, amount: 10),
                         .frame(width: nil, height: nil, minWidth: nil, maxWidth: .infinity, minHeight: nil, maxHeight: nil, alignment: nil),
-                        .glassEffect(.regular),
-                        .cornerRadius(20),
+                        .glassConfig(GlassConfig(style: .regular, shape: .capsule)),
                     ],
                     defaultChildren: [
                         ElementNode(name: "Icon", payload: .image(systemName: "magnifyingglass", assetName: nil), modifiers: [
@@ -162,7 +155,7 @@ public enum ComponentCategory: String, CaseIterable, Identifiable {
                     icon: "arrow.triangle.branch",
                     payload: .navigationStack(title: "Title", displayMode: .large),
                     defaultModifiers: [
-                        .glassEffect(.regular),
+                        .glassConfig(GlassConfig(style: .regular, shape: .rectangle)),
                     ]
                 ),
                 ComponentTemplate(
@@ -175,7 +168,7 @@ public enum ComponentCategory: String, CaseIterable, Identifiable {
                         TabItemConfig(title: "Profile", systemImage: "person.fill"),
                     ]),
                     defaultModifiers: [
-                        .glassEffect(.regular),
+                        .glassConfig(GlassConfig(style: .regular, shape: .capsule)),
                     ]
                 ),
             ]

@@ -85,6 +85,7 @@ public enum TitleDisplayMode: String, Codable, Hashable, CaseIterable {
 
 public enum ButtonStyleType: String, Codable, Hashable, CaseIterable {
     case automatic, borderedProminent, bordered, borderless, plain
+    case glass, glassProminent
 }
 
 public enum ListStyleType: String, Codable, Hashable, CaseIterable {
