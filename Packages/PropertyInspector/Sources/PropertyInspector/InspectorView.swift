@@ -850,54 +850,6 @@ struct GlassConfigSection: View {
             ))
             .toggleStyle(.checkbox)
             .font(.caption)
-
-            // Container Spacing (GlassEffectContainer)
-            // Apple: Elements within this distance morph/blend together
-            HStack {
-                Text("Container")
-                    .font(.caption)
-                Spacer()
-                Toggle("", isOn: Binding(
-                    get: { config.containerSpacing != nil },
-                    set: { enabled in
-                        document.updateElement(element.id) { node in
-                            var c = node.glassConfig ?? .default
-                            c.containerSpacing = enabled ? 30 : nil
-                            node.setGlassConfig(c)
-                        }
-                    }
-                ))
-                .toggleStyle(.checkbox)
-            }
-
-            if config.containerSpacing != nil {
-                HStack {
-                    Text("Merge Distance")
-                        .font(.caption)
-                    Spacer()
-                    Slider(
-                        value: Binding(
-                            get: { Double(config.containerSpacing ?? 30) },
-                            set: { newValue in
-                                document.updateElement(element.id) { node in
-                                    var c = node.glassConfig ?? .default
-                                    c.containerSpacing = CGFloat(newValue)
-                                    node.setGlassConfig(c)
-                                }
-                            }
-                        ),
-                        in: 0...100
-                    )
-                    .frame(width: 80)
-                    Text("\(Int(config.containerSpacing ?? 30))pt")
-                        .font(.caption2)
-                        .frame(width: 34)
-                }
-
-                Text("Glass children within this distance will morph and blend together during animations.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
         }
         .padding(8)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))

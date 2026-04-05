@@ -301,7 +301,7 @@ public struct ElementRenderer: View {
 // MARK: - Glass Background View (Liquid Glass approximation on macOS)
 
 /// Approximates iOS 26 Liquid Glass on macOS canvas.
-/// Uses layered translucent materials — no solid colored rectangles.
+/// Pure gradient-based — NO materials (they render as opaque blue on macOS).
 struct GlassBackgroundView: View {
     var style: GlassStyleType = .regular
     var config: GlassConfig? = nil
@@ -317,61 +317,59 @@ struct GlassBackgroundView: View {
         if effectiveStyle == .identity {
             Color.clear
         } else {
-            ZStack {
-                // Layer 1: Frosted backdrop blur (the core of Liquid Glass)
-                // "clear" = more transparent, "regular" = more frosted
-                if effectiveStyle == .clear {
-                    Color.white.opacity(0.06)
-                        .background(.ultraThinMaterial)
-                } else {
-                    Color.clear
-                        .background(.thinMaterial)
-                }
+            Canvas { context, size in
+                let isClear = effectiveStyle == .clear
 
-                // Layer 2: Subtle light-bending gradient (lensing effect)
-                LinearGradient(
-                    stops: [
-                        .init(color: Color.white.opacity(effectiveStyle == .clear ? 0.08 : 0.15), location: 0.0),
-                        .init(color: Color.white.opacity(0.02), location: 0.4),
-                        .init(color: Color.white.opacity(effectiveStyle == .clear ? 0.04 : 0.08), location: 1.0),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                // Layer 1: Base frosted fill — semi-transparent white/gray
+                let baseOpacity = isClear ? 0.08 : 0.18
+                let baseRect = CGRect(origin: .zero, size: size)
+                context.fill(Path(baseRect), with: .color(Color.white.opacity(baseOpacity)))
+
+                // Layer 2: Lensing gradient (light concentration effect)
+                let gradient = Gradient(stops: [
+                    .init(color: Color.white.opacity(isClear ? 0.06 : 0.12), location: 0.0),
+                    .init(color: Color.white.opacity(0.01), location: 0.45),
+                    .init(color: Color.white.opacity(isClear ? 0.03 : 0.06), location: 1.0),
+                ])
+                context.fill(
+                    Path(baseRect),
+                    with: .linearGradient(gradient, startPoint: .zero, endPoint: CGPoint(x: size.width, y: size.height))
                 )
 
-                // Layer 3: Specular top-edge highlight (responds to light angle)
-                VStack(spacing: 0) {
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(effectiveStyle == .clear ? 0.15 : 0.3),
-                            Color.clear
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 2)
-                    Spacer()
-                }
+                // Layer 3: Specular top-edge highlight
+                let specHeight: CGFloat = 1.5
+                let specGrad = Gradient(colors: [
+                    Color.white.opacity(isClear ? 0.2 : 0.35),
+                    Color.clear
+                ])
+                let specRect = CGRect(x: 0, y: 0, width: size.width, height: specHeight)
+                context.fill(
+                    Path(specRect),
+                    with: .linearGradient(specGrad, startPoint: .zero, endPoint: CGPoint(x: 0, y: specHeight))
+                )
 
-                // Layer 4: Tint color (semantic, like .glassEffect(.regular.tint(.orange)))
+                // Layer 4: Bottom-edge subtle highlight
+                let botRect = CGRect(x: 0, y: size.height - 0.5, width: size.width, height: 0.5)
+                context.fill(Path(botRect), with: .color(Color.white.opacity(0.08)))
+
+                // Layer 5: Left/right edge strokes
+                let leftEdge = Path { p in
+                    p.move(to: CGPoint(x: 0.25, y: 0))
+                    p.addLine(to: CGPoint(x: 0.25, y: size.height))
+                }
+                context.stroke(leftEdge, with: .color(Color.white.opacity(0.12)), lineWidth: 0.5)
+
+                let rightEdge = Path { p in
+                    p.move(to: CGPoint(x: size.width - 0.25, y: 0))
+                    p.addLine(to: CGPoint(x: size.width - 0.25, y: size.height))
+                }
+                context.stroke(rightEdge, with: .color(Color.white.opacity(0.06)), lineWidth: 0.5)
+            }
+            .overlay {
+                // Tint color overlay (only if set)
                 if let tint = tintColor {
-                    tint.opacity(0.15)
+                    tint.opacity(0.12)
                 }
-
-                // Layer 5: Subtle inner border for edge definition
-                RoundedRectangle(cornerRadius: 0)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.25),
-                                Color.white.opacity(0.05),
-                                Color.white.opacity(0.1)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 0.5
-                    )
             }
         }
     }
@@ -379,98 +377,168 @@ struct GlassBackgroundView: View {
 
 // MARK: - Car Paint Material View
 
-/// Renders a 3-layer metallic car paint material:
-/// 1. Base coat (deep color with subtle variation)
-/// 2. Metallic flake layer (sparkle noise)
-/// 3. Clearcoat (sharp specular highlight that follows device tilt)
+/// 3-layer physically-inspired car paint material.
+/// Layer 1: Base coat with tilt-reactive color shift
+/// Layer 2: Metallic flake with variable size and density
+/// Layer 3: Clearcoat with sharp moving specular
 struct CarPaintMaterialView: View {
     let config: CarPaintConfig
     @StateObject private var motion = MotionManager()
 
     var body: some View {
         GeometryReader { geo in
-            let size = geo.size
-            let tiltX = motion.tiltX
-            let tiltY = motion.tiltY
+            let w = geo.size.width
+            let h = geo.size.height
+            let tx = motion.tiltX
+            let ty = motion.tiltY
 
-            ZStack {
-                // Layer 1: Base coat — deep color with subtle metallic variation
-                config.baseColor.swiftUIColor
+            Canvas { context, size in
+                // ── Layer 1: Base coat with tilt-dependent color shift ──
+                let baseRect = CGRect(origin: .zero, size: size)
+                context.fill(Path(baseRect), with: .color(config.baseColor.swiftUIColor))
 
-                // Metallic color shift based on viewing angle (tilt)
-                RadialGradient(
-                    colors: [
-                        config.baseColor.swiftUIColor.opacity(0.0),
-                        config.baseColor.swiftUIColor.opacity(0.3),
-                    ],
-                    center: UnitPoint(
-                        x: 0.5 + tiltX * 0.3,
-                        y: 0.5 + tiltY * 0.3
-                    ),
-                    startRadius: 0,
-                    endRadius: max(size.width, size.height) * 0.8
+                // Darken away from light source for depth
+                let darkGrad = Gradient(stops: [
+                    .init(color: Color.black.opacity(0.0), location: 0.0),
+                    .init(color: Color.black.opacity(0.25), location: 1.0),
+                ])
+                let lightCenter = CGPoint(
+                    x: w * (0.5 + tx * 0.35),
+                    y: h * (0.35 + ty * 0.3)
+                )
+                context.fill(
+                    Path(baseRect),
+                    with: .radialGradient(
+                        darkGrad,
+                        center: lightCenter,
+                        startRadius: 0,
+                        endRadius: max(w, h) * 0.9
+                    )
                 )
 
-                // Layer 2: Metallic flake — high frequency sparkle
-                Canvas { context, canvasSize in
-                    let flakeCount = Int(config.flakeScale * 200 + 50)
-                    let intensity = config.flakeIntensity
+                // Subtle warm highlight near light (color shift)
+                let warmGrad = Gradient(stops: [
+                    .init(color: Color.white.opacity(0.08), location: 0.0),
+                    .init(color: Color.clear, location: 1.0),
+                ])
+                context.fill(
+                    Path(baseRect),
+                    with: .radialGradient(
+                        warmGrad,
+                        center: lightCenter,
+                        startRadius: 0,
+                        endRadius: max(w, h) * 0.5
+                    )
+                )
 
+                // ── Layer 2: Metallic flake ──
+                // flakeScale controls SIZE of each flake (0=tiny, 1=large)
+                // flakeIntensity controls BRIGHTNESS/density
+                let flakeMinSize: CGFloat = 0.3 + config.flakeScale * 3.5  // 0.3pt to 3.8pt
+                let flakeMaxSize: CGFloat = flakeMinSize * 1.8
+                let flakeCount = 800  // Fixed density grid
+                let intensity = config.flakeIntensity
+
+                if intensity > 0.01 {
                     for i in 0..<flakeCount {
-                        // Deterministic pseudo-random positions
-                        let seed1 = Double(i) * 0.618033988749895
-                        let seed2 = Double(i) * 0.414213562373095
-                        let fx = (seed1 - Double(Int(seed1))) * canvasSize.width
-                        let fy = (seed2 - Double(Int(seed2))) * canvasSize.height
+                        // Golden ratio quasi-random distribution (deterministic)
+                        let phi1 = Double(i) * 0.6180339887498949
+                        let phi2 = Double(i) * 0.4142135623730951
+                        let phi3 = Double(i) * 0.7320508075688772  // sqrt(3)-1 for size variation
+                        let fx = CGFloat(phi1 - phi1.rounded(.down)) * size.width
+                        let fy = CGFloat(phi2 - phi2.rounded(.down)) * size.height
+                        let sizeVar = CGFloat(phi3 - phi3.rounded(.down))
 
-                        // Flake brightness depends on angle to light (tilt)
-                        let dx = fx / canvasSize.width - 0.5 - tiltX * 0.4
-                        let dy = fy / canvasSize.height - 0.5 - tiltY * 0.4
-                        let dist = sqrt(dx * dx + dy * dy)
-                        let brightness = max(0, 1.0 - dist * 2.5) * intensity
+                        // Each flake has a "normal" direction — catches light at specific angles
+                        let flakeAngleX = (phi1.truncatingRemainder(dividingBy: 1.0) - 0.5) * 2.0
+                        let flakeAngleY = (phi2.truncatingRemainder(dividingBy: 0.7) / 0.7 - 0.5) * 2.0
 
-                        if brightness > 0.05 {
-                            let flakeSize: CGFloat = CGFloat.random(in: 0.5...2.0)
-                            let rect = CGRect(x: fx, y: fy, width: flakeSize, height: flakeSize)
+                        // Dot product with light direction = how much this flake catches light
+                        let dot = flakeAngleX * tx + flakeAngleY * ty
+                        let catchLight = max(0, dot * 0.6 + 0.3)  // bias so some always visible
+
+                        let brightness = catchLight * intensity * (0.4 + sizeVar * 0.6)
+
+                        if brightness > 0.02 {
+                            let s = flakeMinSize + (flakeMaxSize - flakeMinSize) * sizeVar
+                            let rect = CGRect(x: fx - s/2, y: fy - s/2, width: s, height: s)
                             context.fill(
                                 Path(ellipseIn: rect),
-                                with: .color(Color.white.opacity(brightness * 0.6))
+                                with: .color(Color.white.opacity(brightness * 0.5))
                             )
                         }
                     }
                 }
-                .blendMode(.screen)
 
-                // Layer 3: Clearcoat — sharp specular highlight that tracks tilt
-                let specX = 0.5 + tiltX * 0.6
-                let specY = 0.3 + tiltY * 0.5
-                RadialGradient(
-                    colors: [
-                        Color.white.opacity(config.clearcoatIntensity * 0.7),
-                        Color.white.opacity(config.clearcoatIntensity * 0.15),
-                        Color.clear,
-                    ],
-                    center: UnitPoint(x: specX, y: specY),
-                    startRadius: 0,
-                    endRadius: max(size.width, size.height) * (1.0 - config.clearcoatSharpness * 0.6)
+                // ── Layer 3: Clearcoat specular ──
+                // Primary specular — broad, soft
+                let spec1Center = CGPoint(
+                    x: w * (0.5 + tx * 0.5),
+                    y: h * (0.3 + ty * 0.4)
                 )
-                .blendMode(.screen)
+                let spec1Radius = max(w, h) * (0.6 - config.clearcoatSharpness * 0.35)
+                let spec1Grad = Gradient(stops: [
+                    .init(color: Color.white.opacity(config.clearcoatIntensity * 0.25), location: 0.0),
+                    .init(color: Color.white.opacity(config.clearcoatIntensity * 0.05), location: 0.6),
+                    .init(color: Color.clear, location: 1.0),
+                ])
+                context.fill(
+                    Path(baseRect),
+                    with: .radialGradient(spec1Grad, center: spec1Center, startRadius: 0, endRadius: spec1Radius)
+                )
 
-                // Fresnel edge brightening
+                // Secondary specular — tight, sharp (clearcoat "pinpoint")
+                let spec2Center = CGPoint(
+                    x: w * (0.48 + tx * 0.55),
+                    y: h * (0.25 + ty * 0.45)
+                )
+                let spec2Radius = max(w, h) * (0.2 - config.clearcoatSharpness * 0.12)
+                let spec2Grad = Gradient(stops: [
+                    .init(color: Color.white.opacity(config.clearcoatIntensity * config.clearcoatSharpness * 0.6), location: 0.0),
+                    .init(color: Color.white.opacity(config.clearcoatIntensity * 0.08), location: 0.5),
+                    .init(color: Color.clear, location: 1.0),
+                ])
+                context.fill(
+                    Path(baseRect),
+                    with: .radialGradient(spec2Grad, center: spec2Center, startRadius: 0, endRadius: spec2Radius)
+                )
+
+                // ── Layer 4: Fresnel rim ──
                 if config.fresnelIntensity > 0 {
-                    RoundedRectangle(cornerRadius: 0)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(config.fresnelIntensity * 0.3),
-                                    Color.white.opacity(config.fresnelIntensity * 0.15),
-                                    Color.white.opacity(config.fresnelIntensity * 0.25),
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1.5
-                        )
+                    // Top edge
+                    let topGrad = Gradient(colors: [
+                        Color.white.opacity(config.fresnelIntensity * 0.2),
+                        Color.clear
+                    ])
+                    let topRect = CGRect(x: 0, y: 0, width: size.width, height: min(size.height * 0.15, 20))
+                    context.fill(
+                        Path(topRect),
+                        with: .linearGradient(topGrad, startPoint: .zero, endPoint: CGPoint(x: 0, y: topRect.height))
+                    )
+
+                    // Bottom edge
+                    let botY = size.height - min(size.height * 0.1, 12)
+                    let botRect = CGRect(x: 0, y: botY, width: size.width, height: size.height - botY)
+                    let botGrad = Gradient(colors: [Color.clear, Color.white.opacity(config.fresnelIntensity * 0.12)])
+                    context.fill(
+                        Path(botRect),
+                        with: .linearGradient(botGrad, startPoint: CGPoint(x: 0, y: botY), endPoint: CGPoint(x: 0, y: size.height))
+                    )
+
+                    // Side edges
+                    let sideW: CGFloat = min(size.width * 0.08, 8)
+                    let leftRect = CGRect(x: 0, y: 0, width: sideW, height: size.height)
+                    let leftGrad = Gradient(colors: [Color.white.opacity(config.fresnelIntensity * 0.1), Color.clear])
+                    context.fill(
+                        Path(leftRect),
+                        with: .linearGradient(leftGrad, startPoint: .zero, endPoint: CGPoint(x: sideW, y: 0))
+                    )
+                    let rightRect = CGRect(x: size.width - sideW, y: 0, width: sideW, height: size.height)
+                    let rightGrad = Gradient(colors: [Color.clear, Color.white.opacity(config.fresnelIntensity * 0.1)])
+                    context.fill(
+                        Path(rightRect),
+                        with: .linearGradient(rightGrad, startPoint: CGPoint(x: size.width - sideW, y: 0), endPoint: CGPoint(x: size.width, y: 0))
+                    )
                 }
             }
         }

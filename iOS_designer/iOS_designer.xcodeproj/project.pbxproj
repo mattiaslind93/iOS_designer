@@ -119,13 +119,13 @@
 			mainGroup = 309FBF9E2F82BAE600E3A91B;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				AA0000202F82C00000000001 /* XCLocalSwiftPackageReference "../../Packages/DesignModel" */,
-				AA0000202F82C00000000002 /* XCLocalSwiftPackageReference "../../Packages/CanvasEngine" */,
-				AA0000202F82C00000000003 /* XCLocalSwiftPackageReference "../../Packages/ComponentLibrary" */,
-				AA0000202F82C00000000004 /* XCLocalSwiftPackageReference "../../Packages/PropertyInspector" */,
-				AA0000202F82C00000000005 /* XCLocalSwiftPackageReference "../../Packages/LayerPanel" */,
-				AA0000202F82C00000000006 /* XCLocalSwiftPackageReference "../../Packages/AnimationEditor" */,
-				AA0000202F82C00000000007 /* XCLocalSwiftPackageReference "../../Packages/CodeExport" */,
+				AA0000202F82C00000000001 /* XCLocalSwiftPackageReference "../Packages/DesignModel" */,
+				AA0000202F82C00000000002 /* XCLocalSwiftPackageReference "../Packages/CanvasEngine" */,
+				AA0000202F82C00000000003 /* XCLocalSwiftPackageReference "../Packages/ComponentLibrary" */,
+				AA0000202F82C00000000004 /* XCLocalSwiftPackageReference "../Packages/PropertyInspector" */,
+				AA0000202F82C00000000005 /* XCLocalSwiftPackageReference "../Packages/LayerPanel" */,
+				AA0000202F82C00000000006 /* XCLocalSwiftPackageReference "../Packages/AnimationEditor" */,
+				AA0000202F82C00000000007 /* XCLocalSwiftPackageReference "../Packages/CodeExport" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 309FBFA82F82BAE600E3A91B /* Products */;
@@ -292,7 +292,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "iOS_designer/Info.plist";
+				INFOPLIST_FILE = iOS_designer/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "iOS Designer";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -326,7 +326,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "iOS_designer/Info.plist";
+				INFOPLIST_FILE = iOS_designer/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "iOS Designer";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -370,31 +370,31 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		AA0000202F82C00000000001 /* XCLocalSwiftPackageReference "../../Packages/DesignModel" */ = {
+		AA0000202F82C00000000001 /* XCLocalSwiftPackageReference "../Packages/DesignModel" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/DesignModel;
 		};
-		AA0000202F82C00000000002 /* XCLocalSwiftPackageReference "../../Packages/CanvasEngine" */ = {
+		AA0000202F82C00000000002 /* XCLocalSwiftPackageReference "../Packages/CanvasEngine" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/CanvasEngine;
 		};
-		AA0000202F82C00000000003 /* XCLocalSwiftPackageReference "../../Packages/ComponentLibrary" */ = {
+		AA0000202F82C00000000003 /* XCLocalSwiftPackageReference "../Packages/ComponentLibrary" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/ComponentLibrary;
 		};
-		AA0000202F82C00000000004 /* XCLocalSwiftPackageReference "../../Packages/PropertyInspector" */ = {
+		AA0000202F82C00000000004 /* XCLocalSwiftPackageReference "../Packages/PropertyInspector" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/PropertyInspector;
 		};
-		AA0000202F82C00000000005 /* XCLocalSwiftPackageReference "../../Packages/LayerPanel" */ = {
+		AA0000202F82C00000000005 /* XCLocalSwiftPackageReference "../Packages/LayerPanel" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/LayerPanel;
 		};
-		AA0000202F82C00000000006 /* XCLocalSwiftPackageReference "../../Packages/AnimationEditor" */ = {
+		AA0000202F82C00000000006 /* XCLocalSwiftPackageReference "../Packages/AnimationEditor" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/AnimationEditor;
 		};
-		AA0000202F82C00000000007 /* XCLocalSwiftPackageReference "../../Packages/CodeExport" */ = {
+		AA0000202F82C00000000007 /* XCLocalSwiftPackageReference "../Packages/CodeExport" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/CodeExport;
 		};

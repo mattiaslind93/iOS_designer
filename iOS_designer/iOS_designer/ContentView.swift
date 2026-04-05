@@ -22,6 +22,9 @@ struct ContentView: View {
     @ObservedObject var document: DesignDocument
     @State private var showExportSheet = false
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
+    @State private var isRunningSimulator = false
+    @State private var simulatorError: String?
+    @State private var showSimulatorError = false
 
     var body: some View {
         NavigationSplitView(columnVisibility: $sidebarVisibility) {
@@ -47,12 +50,35 @@ struct ContentView: View {
         .sheet(isPresented: $showExportSheet) {
             ExportSheet(document: document)
         }
+        .alert("Simulator Error", isPresented: $showSimulatorError) {
+            Button("OK") {}
+        } message: {
+            Text(simulatorError ?? "Unknown error")
+        }
         .onReceive(NotificationCenter.default.publisher(for: .addNewPage)) { _ in
             document.addPage()
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleDarkMode)) { _ in
             if let index = document.pages.firstIndex(where: { $0.id == document.selectedPageID }) {
                 document.pages[index].isDarkMode.toggle()
+            }
+        }
+    }
+
+    // MARK: - Simulator
+
+    private func runInSimulator() {
+        isRunningSimulator = true
+        Task.detached {
+            do {
+                try await SimulatorRunner.run(document: document)
+                await MainActor.run { isRunningSimulator = false }
+            } catch {
+                await MainActor.run {
+                    isRunningSimulator = false
+                    simulatorError = error.localizedDescription
+                    showSimulatorError = true
+                }
             }
         }
     }
@@ -101,6 +127,23 @@ struct ContentView: View {
             }
 
             Divider().frame(height: 20)
+
+            // Run in Simulator button
+            Button {
+                runInSimulator()
+            } label: {
+                if isRunningSimulator {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.trailing, 4)
+                    Text("Building…")
+                } else {
+                    Label("Run", systemImage: "play.fill")
+                }
+            }
+            .disabled(isRunningSimulator)
+            .keyboardShortcut("r", modifiers: .command)
+            .help("Build and run in iOS Simulator (⌘R)")
 
             Button {
                 showExportSheet = true
