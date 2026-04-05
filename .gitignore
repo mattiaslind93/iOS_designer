@@ -1,6 +1,4 @@
 # Xcode
-*.xcodeproj/
-*.xcworkspace/
 build/
 DerivedData/
 *.pbxuser
@@ -12,6 +10,10 @@ DerivedData/
 *.dSYM.zip
 *.dSYM
 xcuserdata/
+*.xcworkspace/
+# Keep the main xcodeproj but exclude user data
+iOS_designer/iOS_designer.xcodeproj/xcuserdata/
+iOS_designer/iOS_designer.xcodeproj/project.xcworkspace/xcuserdata/
 
 # Swift Package Manager
 .build/
