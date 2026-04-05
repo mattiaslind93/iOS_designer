@@ -25,8 +25,6 @@ public struct DesignPage: Identifiable, Codable, Hashable {
             name: "Root",
             payload: .zStack(alignment: .center),
             modifiers: [
-                .frame(width: nil, height: nil, minWidth: nil, maxWidth: .infinity,
-                       minHeight: nil, maxHeight: .infinity, alignment: .center),
                 .background(.system(.systemBackground))
             ]
         )

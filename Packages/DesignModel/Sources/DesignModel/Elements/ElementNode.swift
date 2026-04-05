@@ -81,4 +81,31 @@ public struct ElementNode: Identifiable, Codable, Hashable {
         let safeIndex = min(index, children.count)
         children.insert(node, at: safeIndex)
     }
+
+    /// Find the parent node ID and child index for a given element ID.
+    /// Returns (parentID, childIndex) or nil if not found.
+    public func findParentAndIndex(of targetID: UUID) -> (UUID, Int)? {
+        for (index, child) in children.enumerated() {
+            if child.id == targetID {
+                return (self.id, index)
+            }
+            if let result = child.findParentAndIndex(of: targetID) {
+                return result
+            }
+        }
+        return nil
+    }
+
+    /// Create a deep copy with new UUIDs for this node and all descendants.
+    public func deepCopy() -> ElementNode {
+        ElementNode(
+            id: UUID(),
+            name: name + " Copy",
+            payload: payload,
+            modifiers: modifiers,
+            children: children.map { $0.deepCopy() },
+            isLocked: isLocked,
+            isVisible: isVisible
+        )
+    }
 }
