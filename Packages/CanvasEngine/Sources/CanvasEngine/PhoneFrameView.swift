@@ -39,6 +39,7 @@ public struct PhoneFrameView: View {
 
                 // Content
                 content
+                    .colorScheme(isDarkMode ? .dark : .light)
 
                 // Safe area overlay
                 if showSafeAreas {

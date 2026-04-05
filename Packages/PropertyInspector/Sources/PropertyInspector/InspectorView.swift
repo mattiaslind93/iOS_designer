@@ -177,7 +177,7 @@ struct LayoutSection: View {
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
 
-            // Frame
+            // Frame fields
             HStack(spacing: 8) {
                 DimensionField(label: "W", value: element.frameWidth) { newValue in
                     document.updateElement(element.id) { node in
@@ -191,11 +191,60 @@ struct LayoutSection: View {
                 }
             }
 
+            // Size slider (uniform scale)
+            if element.frameWidth != nil || element.frameHeight != nil {
+                HStack {
+                    Text("Size")
+                        .font(.callout)
+                    Spacer()
+                    Slider(
+                        value: Binding(
+                            get: {
+                                let w = element.frameWidth ?? 100
+                                let h = element.frameHeight ?? 100
+                                return max(w, h)
+                            },
+                            set: { newSize in
+                                document.updateElement(element.id) { node in
+                                    let currentW = node.frameWidth ?? 100
+                                    let currentH = node.frameHeight ?? 100
+                                    let maxDim = max(currentW, currentH)
+                                    if maxDim > 0 {
+                                        let ratio = newSize / maxDim
+                                        node.setFrameWidth(currentW * ratio)
+                                        node.setFrameHeight(currentH * ratio)
+                                    }
+                                }
+                            }
+                        ),
+                        in: 8...500
+                    )
+                    .frame(width: 120)
+                    Text("\(Int(max(element.frameWidth ?? 100, element.frameHeight ?? 100)))")
+                        .font(.caption)
+                        .frame(width: 36)
+                }
+            }
+
             // Padding
             HStack(spacing: 8) {
                 DimensionField(label: "Pad", value: element.paddingAmount) { newValue in
                     document.updateElement(element.id) { node in
                         node.setPadding(newValue)
+                    }
+                }
+            }
+
+            // Offset
+            HStack(spacing: 8) {
+                DimensionField(label: "X", value: element.offsetX) { newValue in
+                    document.updateElement(element.id) { node in
+                        node.setOffset(x: newValue ?? 0, y: node.offsetY ?? 0)
+                    }
+                }
+                DimensionField(label: "Y", value: element.offsetY) { newValue in
+                    document.updateElement(element.id) { node in
+                        node.setOffset(x: node.offsetX ?? 0, y: newValue ?? 0)
                     }
                 }
             }
@@ -214,6 +263,32 @@ struct AppearanceSection: View {
             Text("Appearance")
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
+
+            // Foreground color
+            ColorPickerRow(
+                label: "Foreground",
+                color: element.foregroundColor ?? .system(.label)
+            ) { newColor in
+                if let c = newColor {
+                    document.updateElement(element.id) { node in
+                        node.setForegroundColor(c)
+                    }
+                }
+            }
+
+            // Background color
+            ColorPickerRow(
+                label: "Background",
+                color: element.backgroundColor
+            ) { newColor in
+                document.updateElement(element.id) { node in
+                    if let c = newColor {
+                        node.setBackgroundColor(c)
+                    } else {
+                        node.removeBackground()
+                    }
+                }
+            }
 
             // Opacity
             HStack {
@@ -282,6 +357,107 @@ struct AppearanceSection: View {
     }
 }
 
+// MARK: - Color Picker Row
+
+struct ColorPickerRow: View {
+    let label: String
+    let color: DesignColor?
+    let onChange: (DesignColor?) -> Void
+
+    @State private var showPicker = false
+    @State private var hexText: String = ""
+    @State private var swiftUIColor: Color = .white
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(label)
+                    .font(.callout)
+                Spacer()
+
+                // Color swatch
+                ColorPicker("", selection: Binding(
+                    get: {
+                        color?.swiftUIColor ?? .clear
+                    },
+                    set: { newColor in
+                        // Convert SwiftUI Color to DesignColor
+                        let nsColor = NSColor(newColor)
+                        let r = nsColor.redComponent
+                        let g = nsColor.greenComponent
+                        let b = nsColor.blueComponent
+                        let a = nsColor.alphaComponent
+                        onChange(.custom(red: r, green: g, blue: b, opacity: a))
+                    }
+                ))
+                .frame(width: 30)
+
+                // Hex field
+                TextField("#RRGGBB", text: Binding(
+                    get: {
+                        if let c = color {
+                            return c.hexString
+                        }
+                        return ""
+                    },
+                    set: { hex in
+                        if let parsed = DesignColor.fromHex(hex) {
+                            onChange(parsed)
+                        }
+                    }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 80)
+                .font(.caption.monospaced())
+            }
+
+            // System color picker
+            if color != nil {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(quickColors, id: \.name) { qc in
+                            Circle()
+                                .fill(qc.color.swiftUIColor)
+                                .frame(width: 18, height: 18)
+                                .overlay {
+                                    Circle().stroke(Color.primary.opacity(0.2), lineWidth: 0.5)
+                                }
+                                .onTapGesture {
+                                    onChange(qc.color)
+                                }
+                                .help(qc.name)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var quickColors: [(name: String, color: DesignColor)] {
+        [
+            ("Red", .system(.red)),
+            ("Orange", .system(.orange)),
+            ("Yellow", .system(.yellow)),
+            ("Green", .system(.green)),
+            ("Mint", .system(.mint)),
+            ("Teal", .system(.teal)),
+            ("Cyan", .system(.cyan)),
+            ("Blue", .system(.blue)),
+            ("Indigo", .system(.indigo)),
+            ("Purple", .system(.purple)),
+            ("Pink", .system(.pink)),
+            ("Brown", .system(.brown)),
+            ("Gray", .system(.gray)),
+            ("Primary", .system(.primary)),
+            ("Secondary", .system(.secondary)),
+            ("Label", .system(.label)),
+            ("Accent", .system(.accentColor)),
+            ("White", .custom(red: 1, green: 1, blue: 1, opacity: 1)),
+            ("Black", .custom(red: 0, green: 0, blue: 0, opacity: 1)),
+        ]
+    }
+}
+
 // MARK: - Typography Section
 
 struct TypographySection: View {
@@ -343,7 +519,7 @@ struct EffectsSection: View {
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
 
-            // Glass Effect
+            // Glass Effect Style
             HStack {
                 Text("Glass Effect")
                     .font(.callout)
@@ -362,7 +538,12 @@ struct EffectsSection: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .frame(width: 100)
+                .frame(width: 120)
+            }
+
+            // Liquid Glass detailed controls (shown when glass is active)
+            if element.glassStyle != nil {
+                GlassConfigSection(element: element, document: document)
             }
 
             // Shadow
@@ -387,6 +568,20 @@ struct EffectsSection: View {
                     .frame(width: 36)
             }
 
+            // Shadow color
+            if element.shadowRadius > 0 {
+                ColorPickerRow(
+                    label: "Shadow Color",
+                    color: element.shadowColor ?? .custom(red: 0, green: 0, blue: 0, opacity: 0.2)
+                ) { newColor in
+                    if let c = newColor {
+                        document.updateElement(element.id) { node in
+                            node.setShadowColor(c)
+                        }
+                    }
+                }
+            }
+
             // Blur
             HStack {
                 Text("Blur")
@@ -408,6 +603,153 @@ struct EffectsSection: View {
                     .font(.caption)
                     .frame(width: 36)
             }
+        }
+    }
+}
+
+// MARK: - Liquid Glass Config Section
+
+struct GlassConfigSection: View {
+    let element: ElementNode
+    @ObservedObject var document: DesignDocument
+
+    private var config: GlassConfig {
+        element.glassConfig ?? .default
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Liquid Glass")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            // Behavior
+            HStack {
+                Text("Behavior")
+                    .font(.caption)
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { config.behavior },
+                    set: { newBehavior in
+                        document.updateElement(element.id) { node in
+                            var c = node.glassConfig ?? .default
+                            c.behavior = newBehavior
+                            node.setGlassConfig(c)
+                        }
+                    }
+                )) {
+                    ForEach(GlassBehaviorType.allCases, id: \.self) { behavior in
+                        Text(behavior.rawValue).tag(behavior)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 120)
+            }
+
+            // Refraction
+            SliderRow(label: "Refraction", value: config.refractionIntensity) { newValue in
+                document.updateElement(element.id) { node in
+                    var c = node.glassConfig ?? .default
+                    c.refractionIntensity = newValue
+                    node.setGlassConfig(c)
+                }
+            }
+
+            // Tint Intensity
+            SliderRow(label: "Tint", value: config.tintIntensity) { newValue in
+                document.updateElement(element.id) { node in
+                    var c = node.glassConfig ?? .default
+                    c.tintIntensity = newValue
+                    node.setGlassConfig(c)
+                }
+            }
+
+            // Tint Color
+            ColorPickerRow(
+                label: "Tint Color",
+                color: config.tintColor
+            ) { newColor in
+                document.updateElement(element.id) { node in
+                    var c = node.glassConfig ?? .default
+                    c.tintColor = newColor
+                    node.setGlassConfig(c)
+                }
+            }
+
+            // Specular
+            SliderRow(label: "Specular", value: config.specularIntensity) { newValue in
+                document.updateElement(element.id) { node in
+                    var c = node.glassConfig ?? .default
+                    c.specularIntensity = newValue
+                    node.setGlassConfig(c)
+                }
+            }
+
+            // Blur Amount
+            SliderRow(label: "Blur", value: config.blurAmount) { newValue in
+                document.updateElement(element.id) { node in
+                    var c = node.glassConfig ?? .default
+                    c.blurAmount = newValue
+                    node.setGlassConfig(c)
+                }
+            }
+
+            // Shadow Intensity
+            SliderRow(label: "Shadow", value: config.shadowIntensity) { newValue in
+                document.updateElement(element.id) { node in
+                    var c = node.glassConfig ?? .default
+                    c.shadowIntensity = newValue
+                    node.setGlassConfig(c)
+                }
+            }
+
+            // Interactive toggle
+            Toggle("Interactive", isOn: Binding(
+                get: { config.isInteractive },
+                set: { newValue in
+                    document.updateElement(element.id) { node in
+                        var c = node.glassConfig ?? .default
+                        c.isInteractive = newValue
+                        node.setGlassConfig(c)
+                    }
+                }
+            ))
+            .toggleStyle(.checkbox)
+            .font(.caption)
+        }
+        .padding(8)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+// MARK: - Slider Row
+
+struct SliderRow: View {
+    let label: String
+    let value: Double
+    let range: ClosedRange<Double>
+    let onChange: (Double) -> Void
+
+    init(label: String, value: Double, range: ClosedRange<Double> = 0...1, onChange: @escaping (Double) -> Void) {
+        self.label = label
+        self.value = value
+        self.range = range
+        self.onChange = onChange
+    }
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.caption)
+                .frame(width: 60, alignment: .leading)
+            Slider(
+                value: Binding(get: { value }, set: onChange),
+                in: range
+            )
+            .frame(width: 90)
+            Text("\(Int(value * 100))%")
+                .font(.caption2)
+                .frame(width: 34, alignment: .trailing)
         }
     }
 }
@@ -560,6 +902,82 @@ extension ElementNode {
         } else {
             modifiers.removeAll { if case .blur = $0 { return true } else { return false } }
         }
+    }
+
+    // MARK: - Color Properties
+
+    var foregroundColor: DesignColor? {
+        modifiers.compactMap { if case .foregroundStyle(let c) = $0 { return c } else { return nil } }.first
+    }
+
+    var backgroundColor: DesignColor? {
+        modifiers.compactMap { if case .background(let c) = $0 { return c } else { return nil } }.first
+    }
+
+    var shadowColor: DesignColor? {
+        modifiers.compactMap { if case .shadow(let c, _, _, _) = $0 { return c } else { return nil } }.first
+    }
+
+    mutating func setForegroundColor(_ color: DesignColor) {
+        updateOrAddModifier { mod in
+            if case .foregroundStyle = mod { return .foregroundStyle(color) }
+            return nil
+        } fallback: { .foregroundStyle(color) }
+    }
+
+    mutating func setBackgroundColor(_ color: DesignColor) {
+        updateOrAddModifier { mod in
+            if case .background = mod { return .background(color) }
+            return nil
+        } fallback: { .background(color) }
+    }
+
+    mutating func removeBackground() {
+        modifiers.removeAll { if case .background = $0 { return true } else { return false } }
+    }
+
+    mutating func setShadowColor(_ color: DesignColor) {
+        updateOrAddModifier { mod in
+            if case .shadow(_, let r, let x, let y) = mod { return .shadow(color: color, radius: r, x: x, y: y) }
+            return nil
+        } fallback: { .shadow(color: color, radius: 4, x: 0, y: 2) }
+    }
+
+    // MARK: - Offset Properties
+
+    var offsetX: CGFloat? {
+        for mod in modifiers {
+            if case .offset(let x, _) = mod { return x }
+        }
+        return nil
+    }
+
+    var offsetY: CGFloat? {
+        for mod in modifiers {
+            if case .offset(_, let y) = mod { return y }
+        }
+        return nil
+    }
+
+    mutating func setOffset(x: CGFloat, y: CGFloat) {
+        modifiers.removeAll { if case .offset = $0 { return true } else { return false } }
+        if abs(x) > 0.5 || abs(y) > 0.5 {
+            modifiers.append(.offset(x: x, y: y))
+        }
+    }
+
+    // MARK: - Glass Config
+
+    var glassConfig: GlassConfig? {
+        modifiers.compactMap { if case .glassConfig(let c) = $0 { return c } else { return nil } }.first
+    }
+
+    mutating func setGlassConfig(_ config: GlassConfig) {
+        modifiers.removeAll { if case .glassConfig = $0 { return true } else { return false } }
+        // Also sync the glassEffect style
+        modifiers.removeAll { if case .glassEffect = $0 { return true } else { return false } }
+        modifiers.append(.glassEffect(config.style))
+        modifiers.append(.glassConfig(config))
     }
 
     private mutating func updateOrAddModifier(

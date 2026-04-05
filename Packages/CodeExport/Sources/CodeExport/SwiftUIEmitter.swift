@@ -148,6 +148,9 @@ public struct SwiftUIEmitter {
             return ".blur(radius: \(Int(r)))"
         case .glassEffect(let style):
             return ".glassEffect(.\(style.rawValue))"
+        case .glassConfig(let config):
+            // Export as glassEffect with style — detailed config is design-time only
+            return ".glassEffect(.\(config.style.rawValue))"
         case .glassEffectContainer:
             return "" // Applied at container level
         case .offset(let x, let y):

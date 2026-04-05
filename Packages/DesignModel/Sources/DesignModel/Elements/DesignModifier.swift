@@ -39,6 +39,7 @@ public enum DesignModifier: Codable, Hashable {
     case shadow(color: DesignColor, radius: CGFloat, x: CGFloat, y: CGFloat)
     case blur(radius: CGFloat)
     case glassEffect(GlassStyleType)
+    case glassConfig(GlassConfig)
     case glassEffectContainer
 
     // MARK: - Interaction
@@ -91,6 +92,59 @@ public enum MaterialType: String, Codable, Hashable, CaseIterable {
 
 public enum GlassStyleType: String, Codable, Hashable, CaseIterable {
     case regular, clear
+    case thin, ultraThin, thick, ultraThick
+}
+
+/// Liquid Glass behavior mode (iOS 26)
+public enum GlassBehaviorType: String, Codable, Hashable, CaseIterable {
+    case automatic = "Automatic"
+    case squishy = "Squishy"
+    case solid = "Solid"
+    case floating = "Floating"
+}
+
+/// Extended Liquid Glass configuration for fine-grained control
+public struct GlassConfig: Codable, Hashable {
+    public var style: GlassStyleType
+    public var behavior: GlassBehaviorType
+    /// Refraction intensity 0.0–1.0
+    public var refractionIntensity: Double
+    /// Tint color intensity 0.0–1.0
+    public var tintIntensity: Double
+    /// Custom tint color (nil = auto from content)
+    public var tintColor: DesignColor?
+    /// Specular highlight intensity 0.0–1.0
+    public var specularIntensity: Double
+    /// Background blur amount 0.0–1.0
+    public var blurAmount: Double
+    /// Shadow intensity 0.0–1.0
+    public var shadowIntensity: Double
+    /// Whether the glass is interactive (responds to press)
+    public var isInteractive: Bool
+
+    public init(
+        style: GlassStyleType = .regular,
+        behavior: GlassBehaviorType = .automatic,
+        refractionIntensity: Double = 0.5,
+        tintIntensity: Double = 0.3,
+        tintColor: DesignColor? = nil,
+        specularIntensity: Double = 0.5,
+        blurAmount: Double = 0.5,
+        shadowIntensity: Double = 0.3,
+        isInteractive: Bool = false
+    ) {
+        self.style = style
+        self.behavior = behavior
+        self.refractionIntensity = refractionIntensity
+        self.tintIntensity = tintIntensity
+        self.tintColor = tintColor
+        self.specularIntensity = specularIntensity
+        self.blurAmount = blurAmount
+        self.shadowIntensity = shadowIntensity
+        self.isInteractive = isInteractive
+    }
+
+    public static let `default` = GlassConfig()
 }
 
 public enum TransitionType: String, Codable, Hashable, CaseIterable {

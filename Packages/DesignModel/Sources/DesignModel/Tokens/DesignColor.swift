@@ -32,4 +32,30 @@ public enum DesignColor: Codable, Hashable {
         // Separator
         case separator, opaqueSeparator
     }
+
+    // MARK: - Hex Conversion
+
+    /// Returns hex string like "#FF0000" for custom colors, or system color name for system colors.
+    public var hexString: String {
+        switch self {
+        case .custom(let r, let g, let b, _):
+            let ri = Int(r * 255)
+            let gi = Int(g * 255)
+            let bi = Int(b * 255)
+            return String(format: "#%02X%02X%02X", ri, gi, bi)
+        case .system(let sc):
+            return sc.rawValue
+        }
+    }
+
+    /// Parse a hex string like "#FF0000" or "FF0000" into a DesignColor.
+    public static func fromHex(_ hex: String) -> DesignColor? {
+        var str = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if str.hasPrefix("#") { str.removeFirst() }
+        guard str.count == 6, let int = UInt64(str, radix: 16) else { return nil }
+        let r = Double((int >> 16) & 0xFF) / 255.0
+        let g = Double((int >> 8) & 0xFF) / 255.0
+        let b = Double(int & 0xFF) / 255.0
+        return .custom(red: r, green: g, blue: b, opacity: 1.0)
+    }
 }

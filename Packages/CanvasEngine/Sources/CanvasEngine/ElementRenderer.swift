@@ -30,18 +30,34 @@ public struct ElementRenderer: View {
         self.onMove = onMove
     }
 
+    /// Stored offset from the node's modifiers (separate from live drag offset)
+    private var storedOffset: CGSize {
+        for mod in node.modifiers {
+            if case .offset(let x, let y) = mod {
+                return CGSize(width: x, height: y)
+            }
+        }
+        return .zero
+    }
+
     public var body: some View {
         if node.isVisible {
             renderPayload()
-                .applyModifiers(node.modifiers)
+                .applyModifiers(node.modifiers.filter { mod in
+                    if case .offset = mod { return false }
+                    return true
+                })
                 .contentShape(Rectangle())
                 .overlay {
                     if selectedID == node.id {
                         SelectionOverlay()
                     }
                 }
-                // Element drag gesture (only for non-root, non-locked elements)
-                .offset(dragOffset)
+                // Apply stored offset + live drag offset together so overlay follows
+                .offset(CGSize(
+                    width: storedOffset.width + dragOffset.width,
+                    height: storedOffset.height + dragOffset.height
+                ))
                 .gesture(elementDragGesture)
                 .onTapGesture {
                     onSelect(node.id)
@@ -285,37 +301,71 @@ public struct ElementRenderer: View {
 // MARK: - Glass Background View (Liquid Glass approximation on macOS)
 
 struct GlassBackgroundView: View {
+    var style: GlassStyleType = .regular
+    var config: GlassConfig? = nil
+
+    private var effectiveBlur: Double {
+        config?.blurAmount ?? (style == .ultraThin ? 0.3 : style == .thin ? 0.4 : style == .clear ? 0.2 : 0.5)
+    }
+    private var effectiveSpecular: Double {
+        config?.specularIntensity ?? 0.4
+    }
+    private var effectiveTint: Double {
+        config?.tintIntensity ?? 0.15
+    }
+    private var effectiveRefraction: Double {
+        config?.refractionIntensity ?? 0.5
+    }
+    private var effectiveShadow: Double {
+        config?.shadowIntensity ?? 0.3
+    }
+    private var tintColor: Color {
+        config?.tintColor?.swiftUIColor ?? .white
+    }
+
     var body: some View {
         ZStack {
-            // Multi-layer glass approximation
+            // Base material layer
             Rectangle()
                 .fill(.ultraThinMaterial)
+                .opacity(effectiveBlur * 2.0)
+
+            // Refraction / distortion approximation
             Rectangle()
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(0.25),
-                            Color.white.opacity(0.05),
-                            Color.white.opacity(0.15)
+                            Color.white.opacity(effectiveRefraction * 0.4),
+                            Color.white.opacity(effectiveRefraction * 0.05),
+                            Color.white.opacity(effectiveRefraction * 0.25)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
+
+            // Tint layer
+            Rectangle()
+                .fill(tintColor.opacity(effectiveTint))
+
             // Top highlight (specular)
-            VStack {
+            VStack(spacing: 0) {
                 Rectangle()
                     .fill(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.4), Color.clear],
+                            colors: [
+                                Color.white.opacity(effectiveSpecular * 0.8),
+                                Color.clear
+                            ],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
-                    .frame(height: 1)
+                    .frame(height: max(1, effectiveSpecular * 3))
                 Spacer()
             }
         }
+        .shadow(color: .black.opacity(effectiveShadow * 0.3), radius: effectiveShadow * 8, x: 0, y: effectiveShadow * 4)
     }
 }
 
@@ -380,9 +430,12 @@ extension View {
         case .blur(let radius):
             self.blur(radius: radius)
 
-        case .glassEffect:
+        case .glassEffect(let style):
             // Liquid Glass approximation on macOS canvas
-            self.background(GlassBackgroundView())
+            self.background(GlassBackgroundView(style: style))
+
+        case .glassConfig(let config):
+            self.background(GlassBackgroundView(config: config))
 
         case .glassEffectContainer:
             self.background(GlassBackgroundView())
