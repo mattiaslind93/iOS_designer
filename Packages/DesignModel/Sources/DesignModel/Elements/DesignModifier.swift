@@ -122,23 +122,23 @@ public enum GlassShapeType: String, Codable, Hashable, CaseIterable {
 public struct GlassConfig: Codable, Hashable {
     public var style: GlassStyleType
     public var tintColor: DesignColor?
+    /// Tint intensity 0.0–1.0 (how saturated/visible the tint color is)
+    public var tintIntensity: Double
     public var isInteractive: Bool
     public var shape: GlassShapeType
-    /// Spacing for GlassEffectContainer — elements within this distance merge
-    public var containerSpacing: CGFloat?
 
     public init(
         style: GlassStyleType = .regular,
         tintColor: DesignColor? = nil,
+        tintIntensity: Double = 0.3,
         isInteractive: Bool = false,
-        shape: GlassShapeType = .capsule,
-        containerSpacing: CGFloat? = nil
+        shape: GlassShapeType = .capsule
     ) {
         self.style = style
         self.tintColor = tintColor
+        self.tintIntensity = tintIntensity
         self.isInteractive = isInteractive
         self.shape = shape
-        self.containerSpacing = containerSpacing
     }
 
     public static let `default` = GlassConfig()

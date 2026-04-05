@@ -227,9 +227,19 @@ public struct ElementRenderer: View {
                 }
 
         // Controls
-        case .button(let title, _):
-            Button(title) {}
-                .buttonStyle(.borderedProminent)
+        case .button(let title, let style):
+            switch style {
+            case .borderedProminent:
+                Button(title) {}.buttonStyle(.borderedProminent)
+            case .bordered:
+                Button(title) {}.buttonStyle(.bordered)
+            case .borderless:
+                Button(title) {}.buttonStyle(.borderless)
+            case .plain:
+                Button(title) {}.buttonStyle(.plain)
+            case .automatic:
+                Button(title) {}.buttonStyle(.automatic)
+            }
         case .textField(let placeholder):
             TextField(placeholder, text: .constant(""))
                 .textFieldStyle(.roundedBorder)
@@ -301,7 +311,12 @@ public struct ElementRenderer: View {
 // MARK: - Glass Background View (Liquid Glass approximation on macOS)
 
 /// Approximates iOS 26 Liquid Glass on macOS canvas.
-/// Pure gradient-based — NO materials (they render as opaque blue on macOS).
+/// Pure Canvas-drawn — NO SwiftUI materials (they render as opaque blue on macOS).
+///
+/// Style differences:
+/// - `regular`: Frosted, more opaque, stronger specular. For navigation/toolbars.
+/// - `clear`: Very transparent, subtle. For media-rich backgrounds.
+/// - `identity`: Invisible (no glass effect applied).
 struct GlassBackgroundView: View {
     var style: GlassStyleType = .regular
     var config: GlassConfig? = nil
@@ -312,64 +327,55 @@ struct GlassBackgroundView: View {
     private var tintColor: Color? {
         config?.tintColor?.swiftUIColor
     }
+    private var tintIntensity: Double {
+        config?.tintIntensity ?? 0.3
+    }
 
     var body: some View {
         if effectiveStyle == .identity {
             Color.clear
         } else {
+            let isClear = effectiveStyle == .clear
+            // Frosting (base opacity): regular = thick frost, clear = barely there
+            let frost: Double = isClear ? 0.06 : 0.22
+            // Specular strength
+            let spec: Double = isClear ? 0.12 : 0.35
+            // Edge visibility
+            let edge: Double = isClear ? 0.06 : 0.18
+
             Canvas { context, size in
-                let isClear = effectiveStyle == .clear
+                let rect = CGRect(origin: .zero, size: size)
 
-                // Layer 1: Base frosted fill — semi-transparent white/gray
-                let baseOpacity = isClear ? 0.08 : 0.18
-                let baseRect = CGRect(origin: .zero, size: size)
-                context.fill(Path(baseRect), with: .color(Color.white.opacity(baseOpacity)))
+                // 1. Base frost fill
+                context.fill(Path(rect), with: .color(Color.white.opacity(frost)))
 
-                // Layer 2: Lensing gradient (light concentration effect)
-                let gradient = Gradient(stops: [
-                    .init(color: Color.white.opacity(isClear ? 0.06 : 0.12), location: 0.0),
-                    .init(color: Color.white.opacity(0.01), location: 0.45),
-                    .init(color: Color.white.opacity(isClear ? 0.03 : 0.06), location: 1.0),
+                // 2. Tint color fill (intensity-controllable)
+                if let tint = tintColor, tintIntensity > 0.01 {
+                    context.fill(Path(rect), with: .color(tint.opacity(tintIntensity)))
+                }
+
+                // 3. Lensing gradient — light concentration top-left to bottom-right
+                let lensGrad = Gradient(stops: [
+                    .init(color: Color.white.opacity(frost * 0.6), location: 0.0),
+                    .init(color: Color.clear, location: 0.4),
+                    .init(color: Color.white.opacity(frost * 0.3), location: 1.0),
                 ])
                 context.fill(
-                    Path(baseRect),
-                    with: .linearGradient(gradient, startPoint: .zero, endPoint: CGPoint(x: size.width, y: size.height))
+                    Path(rect),
+                    with: .linearGradient(lensGrad, startPoint: .zero, endPoint: CGPoint(x: size.width, y: size.height))
                 )
 
-                // Layer 3: Specular top-edge highlight
-                let specHeight: CGFloat = 1.5
-                let specGrad = Gradient(colors: [
-                    Color.white.opacity(isClear ? 0.2 : 0.35),
-                    Color.clear
-                ])
-                let specRect = CGRect(x: 0, y: 0, width: size.width, height: specHeight)
+                // 4. Specular top-edge highlight (like light hitting glass from above)
+                let specRect = CGRect(x: 0, y: 0, width: size.width, height: max(2, size.height * 0.06))
+                let specGrad = Gradient(colors: [Color.white.opacity(spec), Color.clear])
                 context.fill(
                     Path(specRect),
-                    with: .linearGradient(specGrad, startPoint: .zero, endPoint: CGPoint(x: 0, y: specHeight))
+                    with: .linearGradient(specGrad, startPoint: .zero, endPoint: CGPoint(x: 0, y: specRect.height))
                 )
 
-                // Layer 4: Bottom-edge subtle highlight
-                let botRect = CGRect(x: 0, y: size.height - 0.5, width: size.width, height: 0.5)
-                context.fill(Path(botRect), with: .color(Color.white.opacity(0.08)))
-
-                // Layer 5: Left/right edge strokes
-                let leftEdge = Path { p in
-                    p.move(to: CGPoint(x: 0.25, y: 0))
-                    p.addLine(to: CGPoint(x: 0.25, y: size.height))
-                }
-                context.stroke(leftEdge, with: .color(Color.white.opacity(0.12)), lineWidth: 0.5)
-
-                let rightEdge = Path { p in
-                    p.move(to: CGPoint(x: size.width - 0.25, y: 0))
-                    p.addLine(to: CGPoint(x: size.width - 0.25, y: size.height))
-                }
-                context.stroke(rightEdge, with: .color(Color.white.opacity(0.06)), lineWidth: 0.5)
-            }
-            .overlay {
-                // Tint color overlay (only if set)
-                if let tint = tintColor {
-                    tint.opacity(0.12)
-                }
+                // 5. Edge border (all sides) — defines the glass shape
+                let borderPath = Path(rect.insetBy(dx: 0.25, dy: 0.25))
+                context.stroke(borderPath, with: .color(Color.white.opacity(edge)), lineWidth: 0.5)
             }
         }
     }

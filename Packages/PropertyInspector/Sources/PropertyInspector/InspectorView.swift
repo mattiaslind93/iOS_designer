@@ -823,6 +823,29 @@ struct GlassConfigSection: View {
                 .frame(width: 130)
             }
 
+            // Style (regular vs clear vs identity)
+            HStack {
+                Text("Style")
+                    .font(.caption)
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { config.style },
+                    set: { newStyle in
+                        document.updateElement(element.id) { node in
+                            var c = node.glassConfig ?? .default
+                            c.style = newStyle
+                            node.setGlassConfig(c)
+                        }
+                    }
+                )) {
+                    ForEach(GlassStyleType.allCases, id: \.self) { style in
+                        Text(style.rawValue).tag(style)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+            }
+
             // Tint Color (.tint() modifier on Glass)
             // Apple: "Tint must convey meaning (primary action, state), never decorative"
             ColorPickerRow(
@@ -833,6 +856,21 @@ struct GlassConfigSection: View {
                     var c = node.glassConfig ?? .default
                     c.tintColor = newColor
                     node.setGlassConfig(c)
+                }
+            }
+
+            // Tint Intensity (how saturated/visible the tint color is)
+            if config.tintColor != nil {
+                SliderRow(
+                    label: "Intensity",
+                    value: config.tintIntensity,
+                    range: 0...1
+                ) { newValue in
+                    document.updateElement(element.id) { node in
+                        var c = node.glassConfig ?? .default
+                        c.tintIntensity = newValue
+                        node.setGlassConfig(c)
+                    }
                 }
             }
 

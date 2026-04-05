@@ -84,7 +84,7 @@ public struct PhoneFrameView: View {
             // Top safe area
             VStack {
                 Rectangle()
-                    .fill(Color.blue.opacity(0.08))
+                    .fill(Color.gray.opacity(0.06))
                     .frame(height: deviceFrame.safeAreaInsets.top)
                 Spacer()
             }
@@ -93,7 +93,7 @@ public struct PhoneFrameView: View {
             VStack {
                 Spacer()
                 Rectangle()
-                    .fill(Color.blue.opacity(0.08))
+                    .fill(Color.gray.opacity(0.06))
                     .frame(height: deviceFrame.safeAreaInsets.bottom)
             }
         }
