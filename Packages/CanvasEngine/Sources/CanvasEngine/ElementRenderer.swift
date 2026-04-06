@@ -69,7 +69,7 @@ public struct ElementRenderer: View {
     // MARK: - Element Drag Gesture
 
     private var elementDragGesture: some Gesture {
-        DragGesture(coordinateSpace: .global)
+        DragGesture()
             .onChanged { value in
                 guard !node.isLocked && !isRoot else { return }
                 isDragging = true

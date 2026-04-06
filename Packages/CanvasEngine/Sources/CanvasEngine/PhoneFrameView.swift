@@ -20,9 +20,17 @@ public struct PhoneFrameView: View {
         self.content = AnyView(content())
     }
 
+    /// Large interaction area so elements can be dragged well beyond the phone frame.
+    private var interactionSize: CGSize {
+        CGSize(
+            width: deviceFrame.size.width + 600,
+            height: deviceFrame.size.height + 600
+        )
+    }
+
     public var body: some View {
         ZStack {
-            // Device outer bezel
+            // Device outer bezel (visual only)
             RoundedRectangle(cornerRadius: deviceFrame.screenCornerRadius + 4)
                 .fill(Color.black)
                 .frame(
@@ -30,44 +38,46 @@ public struct PhoneFrameView: View {
                     height: deviceFrame.size.height + 8
                 )
                 .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+                .allowsHitTesting(false)
 
-            // Screen background (clipped to phone shape)
+            // Screen background (clipped to phone shape, visual only)
             Rectangle()
                 .fill(isDarkMode ? Color.black : Color.white)
                 .frame(width: deviceFrame.size.width, height: deviceFrame.size.height)
                 .clipShape(RoundedRectangle(cornerRadius: deviceFrame.screenCornerRadius))
+                .allowsHitTesting(false)
 
-            // Content — NOT clipped, so elements can be dragged beyond phone edges
-            // and their hit areas are never cut off
+            // Content — uses a much larger frame than the phone so elements
+            // near edges or outside the phone can still receive drag gestures.
+            // The content itself is aligned to a phone-sized area via its internal layout.
             content
                 .colorScheme(isDarkMode ? .dark : .light)
-                .frame(width: deviceFrame.size.width, height: deviceFrame.size.height)
+                .frame(width: deviceFrame.size.width, height: deviceFrame.size.height, alignment: .center)
+                .frame(width: interactionSize.width, height: interactionSize.height)
+                .contentShape(Rectangle())
 
             // Phone frame overlays (clipped to phone shape, non-interactive)
             ZStack {
-                // Safe area overlay
                 if showSafeAreas {
                     safeAreaOverlay
                 }
-
-                // Dynamic Island
                 if deviceFrame.hasDynamicIsland {
                     dynamicIsland
                 }
-
-                // Home indicator
                 homeIndicator
             }
             .frame(width: deviceFrame.size.width, height: deviceFrame.size.height)
             .clipShape(RoundedRectangle(cornerRadius: deviceFrame.screenCornerRadius))
             .allowsHitTesting(false)
 
-            // Phone frame border — visual only, covers content overflow at edges
+            // Phone frame border (visual only)
             RoundedRectangle(cornerRadius: deviceFrame.screenCornerRadius)
                 .strokeBorder(Color.black, lineWidth: 4)
                 .frame(width: deviceFrame.size.width, height: deviceFrame.size.height)
                 .allowsHitTesting(false)
         }
+        // The outer ZStack must also be large enough for the expanded interaction area
+        .frame(width: interactionSize.width, height: interactionSize.height)
     }
 
     private var dynamicIsland: some View {
