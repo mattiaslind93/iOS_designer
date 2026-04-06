@@ -306,6 +306,14 @@ public struct ElementRenderer: View {
             Group {
                 renderChildren()
             }
+
+        // Vector Drawing
+        case .vectorPath(let path, let stroke, let fill):
+            VectorPathView(path: path, stroke: stroke, fill: fill)
+
+        // Imported Image
+        case .importedImage(let data):
+            ImportedImageView(imageData: data)
         }
     }
 

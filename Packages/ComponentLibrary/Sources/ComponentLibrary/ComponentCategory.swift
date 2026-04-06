@@ -9,19 +9,21 @@ public enum ComponentCategory: String, CaseIterable, Identifiable {
     case controls = "Controls"
     case content = "Content"
     case shapes = "Shapes"
+    case vectorShapes = "Vector Shapes"
     case containers = "Containers"
 
     public var id: String { rawValue }
 
     public var systemImage: String {
         switch self {
-        case .liquidGlass: return "circle.hexagongrid"
-        case .layout:      return "square.grid.2x2"
-        case .navigation:  return "sidebar.squares.leading"
-        case .controls:    return "slider.horizontal.3"
-        case .content:     return "text.alignleft"
-        case .shapes:      return "circle.square"
-        case .containers:  return "rectangle.on.rectangle"
+        case .liquidGlass:  return "circle.hexagongrid"
+        case .layout:       return "square.grid.2x2"
+        case .navigation:   return "sidebar.squares.leading"
+        case .controls:     return "slider.horizontal.3"
+        case .content:      return "text.alignleft"
+        case .shapes:       return "circle.square"
+        case .vectorShapes: return "pencil.and.outline"
+        case .containers:   return "rectangle.on.rectangle"
         }
     }
 
@@ -222,6 +224,35 @@ public enum ComponentCategory: String, CaseIterable, Identifiable {
                 ComponentTemplate(name: "Capsule", icon: "capsule", payload: .capsule),
                 ComponentTemplate(name: "Color", icon: "paintpalette", payload: .color(designColor: .system(.accentColor))),
             ]
+        case .vectorShapes:
+            let defaultSize = CGRect(x: 0, y: 0, width: 100, height: 100)
+            return VectorShapePreset.allCases.map { preset in
+                ComponentTemplate(
+                    name: preset.displayName,
+                    icon: preset.icon,
+                    payload: .vectorPath(
+                        path: preset.makePath(in: defaultSize),
+                        stroke: VectorStrokeStyle(color: .system(.label), width: 2),
+                        fill: .system(.accentColor)
+                    ),
+                    defaultModifiers: [
+                        .frame(width: 100, height: 100, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: nil)
+                    ]
+                )
+            } + [
+                ComponentTemplate(
+                    name: "Free Path",
+                    icon: "scribble.variable",
+                    payload: .vectorPath(
+                        path: VectorPath(points: [], isClosed: false),
+                        stroke: VectorStrokeStyle(color: .system(.label), width: 2),
+                        fill: nil
+                    ),
+                    defaultModifiers: [
+                        .frame(width: 100, height: 100, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: nil)
+                    ]
+                ),
+            ]
         case .containers:
             return [
                 ComponentTemplate(name: "List", icon: "list.bullet.rectangle", payload: .list(style: .insetGrouped)),
@@ -271,7 +302,7 @@ public struct ComponentTemplate: Identifiable {
         var modifiers: [DesignModifier] = []
 
         switch payload {
-        case .rectangle, .circle, .roundedRectangle, .capsule:
+        case .rectangle, .circle, .roundedRectangle, .capsule, .vectorPath:
             modifiers = [
                 .frame(width: 100, height: 100, minWidth: nil, maxWidth: nil, minHeight: nil, maxHeight: nil, alignment: nil),
                 .foregroundStyle(.system(.accentColor))

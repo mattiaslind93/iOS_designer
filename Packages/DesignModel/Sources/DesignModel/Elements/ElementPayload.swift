@@ -50,6 +50,14 @@ public enum ElementPayload: Codable, Hashable {
     case list(style: ListStyleType)
     case form
     case group
+
+    // MARK: - Vector Drawing
+
+    case vectorPath(path: VectorPath, stroke: VectorStrokeStyle?, fill: DesignColor?)
+
+    // MARK: - Imported Image
+
+    case importedImage(data: ImportedImageData)
 }
 
 // MARK: - Supporting Types

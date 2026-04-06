@@ -119,6 +119,11 @@ public struct SwiftUIEmitter {
         case .list:                return "List"
         case .form:                return "Form"
         case .group:               return "Group"
+
+        case .vectorPath(let path, let stroke, let fill):
+            return emitVectorPath(path, stroke: stroke, fill: fill)
+        case .importedImage(let data):
+            return "Image(uiImage: UIImage(data: Data(base64Encoded: \"\(data.imageData.base64EncodedString().prefix(20))...\")!)!) // \(data.fileName)"
         }
     }
 
@@ -203,6 +208,36 @@ public struct SwiftUIEmitter {
             default:         return ".\(sys.rawValue)"
             }
         }
+    }
+
+    private func emitVectorPath(_ path: VectorPath, stroke: VectorStrokeStyle?, fill: DesignColor?) -> String {
+        var lines: [String] = []
+        lines.append("Path { path in")
+        for (i, point) in path.points.enumerated() {
+            if i == 0 {
+                lines.append("    path.move(to: CGPoint(x: \(String(format: "%.1f", point.position.x)), y: \(String(format: "%.1f", point.position.y))))")
+            } else {
+                let prev = path.points[i - 1]
+                if let handleOut = prev.handleOutAbsolute, let handleIn = point.handleInAbsolute {
+                    lines.append("    path.addCurve(to: CGPoint(x: \(String(format: "%.1f", point.position.x)), y: \(String(format: "%.1f", point.position.y))), control1: CGPoint(x: \(String(format: "%.1f", handleOut.x)), y: \(String(format: "%.1f", handleOut.y))), control2: CGPoint(x: \(String(format: "%.1f", handleIn.x)), y: \(String(format: "%.1f", handleIn.y))))")
+                } else if let handleOut = prev.handleOutAbsolute {
+                    lines.append("    path.addQuadCurve(to: CGPoint(x: \(String(format: "%.1f", point.position.x)), y: \(String(format: "%.1f", point.position.y))), control: CGPoint(x: \(String(format: "%.1f", handleOut.x)), y: \(String(format: "%.1f", handleOut.y))))")
+                } else {
+                    lines.append("    path.addLine(to: CGPoint(x: \(String(format: "%.1f", point.position.x)), y: \(String(format: "%.1f", point.position.y))))")
+                }
+            }
+        }
+        if path.isClosed {
+            lines.append("    path.closeSubpath()")
+        }
+        lines.append("}")
+        if let fill {
+            lines.append(".fill(\(emitColor(fill)))")
+        }
+        if let stroke {
+            lines.append(".stroke(\(emitColor(stroke.color)), lineWidth: \(Int(stroke.width)))")
+        }
+        return lines.joined(separator: "\n")
     }
 
     private func emitGridColumn(_ config: GridColumnConfig) -> String {

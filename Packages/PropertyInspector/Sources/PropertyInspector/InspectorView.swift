@@ -47,6 +47,20 @@ public struct InspectorView: View {
                         Divider()
                     }
 
+                    // Vector path section (only for vector elements)
+                    if case .vectorPath = element.payload {
+                        VectorStrokeSection(element: element, document: document)
+                        Divider()
+                        VectorFillSection(element: element, document: document)
+                        Divider()
+                    }
+
+                    // Imported image section
+                    if case .importedImage = element.payload {
+                        ImportedImageSection(element: element, document: document)
+                        Divider()
+                    }
+
                     // Effects section
                     EffectsSection(element: element, document: document)
                 }
@@ -1230,7 +1244,7 @@ extension ElementPayload {
 
     var isShape: Bool {
         switch self {
-        case .rectangle, .circle, .roundedRectangle, .capsule, .color: return true
+        case .rectangle, .circle, .roundedRectangle, .capsule, .color, .vectorPath: return true
         default: return false
         }
     }
@@ -1268,6 +1282,8 @@ extension ElementPayload {
         case .list:             return "List"
         case .form:             return "Form"
         case .group:            return "Group"
+        case .vectorPath:       return "Vector Path"
+        case .importedImage:    return "Image"
         }
     }
 
@@ -1304,6 +1320,229 @@ extension ElementPayload {
         case .list:             return "list.bullet.rectangle"
         case .form:             return "doc.plaintext"
         case .group:            return "folder"
+        case .vectorPath:       return "scribble.variable"
+        case .importedImage:    return "photo.on.rectangle"
+        }
+    }
+}
+
+// MARK: - Vector Stroke Section
+
+struct VectorStrokeSection: View {
+    let element: ElementNode
+    @ObservedObject var document: DesignDocument
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Stroke")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            if case .vectorPath(_, let stroke, _) = element.payload {
+                let hasStroke = stroke != nil
+                Toggle("Stroke", isOn: Binding(
+                    get: { hasStroke },
+                    set: { enabled in
+                        document.updateElement(element.id) { node in
+                            if case .vectorPath(let p, _, let f) = node.payload {
+                                node.payload = .vectorPath(
+                                    path: p,
+                                    stroke: enabled ? .default : nil,
+                                    fill: f
+                                )
+                            }
+                        }
+                    }
+                ))
+
+                if let stroke {
+                    HStack {
+                        Text("Width")
+                            .font(.callout)
+                        Slider(value: Binding(
+                            get: { stroke.width },
+                            set: { newWidth in
+                                document.updateElement(element.id) { node in
+                                    if case .vectorPath(let p, var s, let f) = node.payload {
+                                        s?.width = newWidth
+                                        node.payload = .vectorPath(path: p, stroke: s, fill: f)
+                                    }
+                                }
+                            }
+                        ), in: 0.5...20, step: 0.5)
+                        Text("\(String(format: "%.1f", stroke.width))pt")
+                            .font(.caption)
+                            .frame(width: 40)
+                    }
+
+                    ColorPickerRow(label: "Color", color: stroke.color) { newColor in
+                        if let c = newColor {
+                            document.updateElement(element.id) { node in
+                                if case .vectorPath(let p, var s, let f) = node.payload {
+                                    s?.color = c
+                                    node.payload = .vectorPath(path: p, stroke: s, fill: f)
+                                }
+                            }
+                        }
+                    }
+
+                    Picker("Line Cap", selection: Binding(
+                        get: { stroke.lineCap },
+                        set: { newCap in
+                            document.updateElement(element.id) { node in
+                                if case .vectorPath(let p, var s, let f) = node.payload {
+                                    s?.lineCap = newCap
+                                    node.payload = .vectorPath(path: p, stroke: s, fill: f)
+                                }
+                            }
+                        }
+                    )) {
+                        ForEach(LineCapType.allCases, id: \.self) { cap in
+                            Text(cap.rawValue.capitalized).tag(cap)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Picker("Line Join", selection: Binding(
+                        get: { stroke.lineJoin },
+                        set: { newJoin in
+                            document.updateElement(element.id) { node in
+                                if case .vectorPath(let p, var s, let f) = node.payload {
+                                    s?.lineJoin = newJoin
+                                    node.payload = .vectorPath(path: p, stroke: s, fill: f)
+                                }
+                            }
+                        }
+                    )) {
+                        ForEach(LineJoinType.allCases, id: \.self) { join in
+                            Text(join.rawValue.capitalized).tag(join)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Vector Fill Section
+
+struct VectorFillSection: View {
+    let element: ElementNode
+    @ObservedObject var document: DesignDocument
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Fill")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            if case .vectorPath(let path, _, let fill) = element.payload {
+                let hasFill = fill != nil
+                Toggle("Fill", isOn: Binding(
+                    get: { hasFill },
+                    set: { enabled in
+                        document.updateElement(element.id) { node in
+                            if case .vectorPath(let p, let s, _) = node.payload {
+                                node.payload = .vectorPath(
+                                    path: p,
+                                    stroke: s,
+                                    fill: enabled ? .system(.accentColor) : nil
+                                )
+                            }
+                        }
+                    }
+                ))
+
+                if fill != nil {
+                    ColorPickerRow(label: "Fill Color", color: fill) { newColor in
+                        document.updateElement(element.id) { node in
+                            if case .vectorPath(let p, let s, _) = node.payload {
+                                node.payload = .vectorPath(path: p, stroke: s, fill: newColor)
+                            }
+                        }
+                    }
+                }
+
+                Picker("Fill Rule", selection: Binding(
+                    get: { path.fillRule },
+                    set: { newRule in
+                        document.updateElement(element.id) { node in
+                            if case .vectorPath(var p, let s, let f) = node.payload {
+                                p.fillRule = newRule
+                                node.payload = .vectorPath(path: p, stroke: s, fill: f)
+                            }
+                        }
+                    }
+                )) {
+                    ForEach(FillRuleType.allCases, id: \.self) { rule in
+                        Text(rule.rawValue).tag(rule)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Toggle("Closed Path", isOn: Binding(
+                    get: { path.isClosed },
+                    set: { newValue in
+                        document.updateElement(element.id) { node in
+                            if case .vectorPath(var p, let s, let f) = node.payload {
+                                p.isClosed = newValue
+                                node.payload = .vectorPath(path: p, stroke: s, fill: f)
+                            }
+                        }
+                    }
+                ))
+
+                Text("\(path.points.count) points")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+}
+
+// MARK: - Imported Image Section
+
+struct ImportedImageSection: View {
+    let element: ElementNode
+    @ObservedObject var document: DesignDocument
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Image")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            if case .importedImage(let data) = element.payload {
+                LabeledContent("File") {
+                    Text(data.fileName)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
+                LabeledContent("Size") {
+                    Text("\(Int(data.originalSize.width)) × \(Int(data.originalSize.height))")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
+                Picker("Content Mode", selection: Binding(
+                    get: { data.contentMode },
+                    set: { newMode in
+                        document.updateElement(element.id) { node in
+                            if case .importedImage(var d) = node.payload {
+                                d.contentMode = newMode
+                                node.payload = .importedImage(data: d)
+                            }
+                        }
+                    }
+                )) {
+                    ForEach(ImageContentMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue.capitalized).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
         }
     }
 }

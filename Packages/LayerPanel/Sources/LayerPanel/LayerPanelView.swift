@@ -498,6 +498,8 @@ struct LayerRow: View {
         case .list:             return "list.bullet.rectangle"
         case .form:             return "doc.plaintext"
         case .group:            return "folder"
+        case .vectorPath:       return "scribble.variable"
+        case .importedImage:    return "photo.on.rectangle"
         }
     }
 }
