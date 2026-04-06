@@ -34,7 +34,7 @@ enum SimulatorRunner {
             .appendingPathComponent("iOSDesigner_SimRun_\(UUID().uuidString.prefix(8))")
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
 
-        // 2. Export project
+        // 2. Export project (ProjectGenerator now creates .xcodeproj + source files)
         let generator = ProjectGenerator()
         do {
             try generator.write(document: document, to: tmpDir)
@@ -45,9 +45,6 @@ enum SimulatorRunner {
         let projectName = document.exportConfig.projectName.isEmpty
             ? "GeneratedApp" : document.exportConfig.projectName
         let projectDir = tmpDir.appendingPathComponent(projectName)
-
-        // 3. Create a minimal Xcode project (Package.swift based)
-        try createXcodeProject(at: projectDir, name: projectName, document: document)
 
         // 4. Find a booted simulator or boot one
         let deviceID = try await findOrBootSimulator()
@@ -97,149 +94,6 @@ enum SimulatorRunner {
 
         // 8. Bring Simulator to front
         _ = try? await shell("/usr/bin/open", args: ["-a", "Simulator"], timeout: 5)
-    }
-
-    // MARK: - Xcode Project Creation
-
-    private static func createXcodeProject(at dir: URL, name: String, document: DesignDocument) throws {
-        // Create a simple Package.swift based project that xcodebuild can handle
-        // Actually, we'll create a proper xcodeproj since Package.swift iOS apps need Xcode 16+
-
-        let bundleID = document.exportConfig.bundleIdentifier.isEmpty
-            ? "com.iosdesigner.\(name)" : document.exportConfig.bundleIdentifier
-        let target = document.exportConfig.deploymentTarget.isEmpty
-            ? "26.0" : document.exportConfig.deploymentTarget
-
-        // Create xcodeproj directory
-        let projDir = dir.appendingPathComponent("\(name).xcodeproj")
-        try FileManager.default.createDirectory(at: projDir, withIntermediateDirectories: true)
-
-        // Generate a minimal pbxproj
-        let pbxproj = generatePbxproj(name: name, bundleID: bundleID, target: target)
-        try pbxproj.write(to: projDir.appendingPathComponent("project.pbxproj"), atomically: true, encoding: .utf8)
-
-        // Create Info.plist
-        let infoPlist = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-            <key>CFBundleDevelopmentRegion</key>
-            <string>en</string>
-            <key>CFBundleExecutable</key>
-            <string>$(EXECUTABLE_NAME)</string>
-            <key>CFBundleIdentifier</key>
-            <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-            <key>CFBundleInfoDictionaryVersion</key>
-            <string>6.0</string>
-            <key>CFBundleName</key>
-            <string>$(PRODUCT_NAME)</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>CFBundleShortVersionString</key>
-            <string>1.0</string>
-            <key>CFBundleVersion</key>
-            <string>1</string>
-            <key>LSRequiresIPhoneOS</key>
-            <true/>
-            <key>UILaunchScreen</key>
-            <dict/>
-            <key>UIRequiredDeviceCapabilities</key>
-            <array><string>armv7</string></array>
-            <key>UISupportedInterfaceOrientations</key>
-            <array>
-                <string>UIInterfaceOrientationPortrait</string>
-            </array>
-        </dict>
-        </plist>
-        """
-
-        let srcDir = dir.appendingPathComponent(name)
-        try FileManager.default.createDirectory(at: srcDir, withIntermediateDirectories: true)
-        try infoPlist.write(to: srcDir.appendingPathComponent("Info.plist"), atomically: true, encoding: .utf8)
-    }
-
-    private static func generatePbxproj(name: String, bundleID: String, target: String) -> String {
-        // Minimal Xcode project that builds an iOS app from Swift sources
-        let mainGroupID     = "AA000000000000000001"
-        let srcGroupID      = "AA000000000000000002"
-        let projectID       = "AA000000000000000003"
-        let targetID        = "AA000000000000000004"
-        let buildConfigListID = "AA000000000000000005"
-        let debugConfigID   = "AA000000000000000006"
-        let targetConfigListID = "AA000000000000000007"
-        let targetDebugID   = "AA000000000000000008"
-        let sourcesPhaseID  = "AA000000000000000009"
-        let productRefID    = "AA000000000000000010"
-        let productsGroupID = "AA000000000000000011"
-
-        return """
-        // !$*UTF8*$!
-        {
-            archiveVersion = 1;
-            classes = {};
-            objectVersion = 56;
-            objects = {
-                \(mainGroupID) = { isa = PBXGroup; children = (\(srcGroupID), \(productsGroupID)); sourceTree = "<group>"; };
-                \(srcGroupID) = { isa = PBXGroup; children = (); name = \(name); path = \(name); sourceTree = "<group>"; };
-                \(productsGroupID) = { isa = PBXGroup; children = (\(productRefID)); name = Products; sourceTree = "<group>"; };
-                \(productRefID) = { isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "\(name).app"; sourceTree = BUILT_PRODUCTS_DIR; };
-                \(sourcesPhaseID) = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-                \(targetID) = {
-                    isa = PBXNativeTarget;
-                    buildConfigurationList = \(targetConfigListID);
-                    buildPhases = (\(sourcesPhaseID));
-                    buildRules = ();
-                    dependencies = ();
-                    name = \(name);
-                    productName = \(name);
-                    productReference = \(productRefID);
-                    productType = "com.apple.product-type.application";
-                };
-                \(projectID) = {
-                    isa = PBXProject;
-                    buildConfigurationList = \(buildConfigListID);
-                    compatibilityVersion = "Xcode 14.0";
-                    developmentRegion = en;
-                    hasScannedForEncodings = 0;
-                    knownRegions = (en, Base);
-                    mainGroup = \(mainGroupID);
-                    productRefGroup = \(productsGroupID);
-                    projectDirPath = "";
-                    projectRoot = "";
-                    targets = (\(targetID));
-                };
-                \(buildConfigListID) = { isa = XCConfigurationList; buildConfigurations = (\(debugConfigID)); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
-                \(debugConfigID) = {
-                    isa = XCBuildConfiguration;
-                    buildSettings = {
-                        ALWAYS_SEARCH_USER_PATHS = NO;
-                        CLANG_ENABLE_MODULES = YES;
-                        SWIFT_VERSION = 6.0;
-                        SDKROOT = iphoneos;
-                    };
-                    name = Debug;
-                };
-                \(targetConfigListID) = { isa = XCConfigurationList; buildConfigurations = (\(targetDebugID)); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
-                \(targetDebugID) = {
-                    isa = XCBuildConfiguration;
-                    buildSettings = {
-                        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-                        CODE_SIGN_STYLE = Automatic;
-                        INFOPLIST_FILE = "\(name)/Info.plist";
-                        IPHONEOS_DEPLOYMENT_TARGET = \(target);
-                        PRODUCT_BUNDLE_IDENTIFIER = "\(bundleID)";
-                        PRODUCT_NAME = "$(TARGET_NAME)";
-                        SWIFT_VERSION = 6.0;
-                        TARGETED_DEVICE_FAMILY = 1;
-                        GENERATE_INFOPLIST_FILE = NO;
-                    };
-                    name = Debug;
-                };
-            };
-            rootObject = \(projectID);
-        }
-        """
     }
 
     // MARK: - Simulator
