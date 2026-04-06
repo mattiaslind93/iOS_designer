@@ -31,16 +31,20 @@ public struct PhoneFrameView: View {
                 )
                 .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
 
-            // Screen area
+            // Screen background (clipped to phone shape)
+            Rectangle()
+                .fill(isDarkMode ? Color.black : Color.white)
+                .frame(width: deviceFrame.size.width, height: deviceFrame.size.height)
+                .clipShape(RoundedRectangle(cornerRadius: deviceFrame.screenCornerRadius))
+
+            // Content — NOT clipped, so elements can be dragged beyond phone edges
+            // and their hit areas are never cut off
+            content
+                .colorScheme(isDarkMode ? .dark : .light)
+                .frame(width: deviceFrame.size.width, height: deviceFrame.size.height)
+
+            // Phone frame overlays (clipped to phone shape, non-interactive)
             ZStack {
-                // Background
-                Rectangle()
-                    .fill(isDarkMode ? Color.black : Color.white)
-
-                // Content
-                content
-                    .colorScheme(isDarkMode ? .dark : .light)
-
                 // Safe area overlay
                 if showSafeAreas {
                     safeAreaOverlay
@@ -56,6 +60,13 @@ public struct PhoneFrameView: View {
             }
             .frame(width: deviceFrame.size.width, height: deviceFrame.size.height)
             .clipShape(RoundedRectangle(cornerRadius: deviceFrame.screenCornerRadius))
+            .allowsHitTesting(false)
+
+            // Phone frame border — visual only, covers content overflow at edges
+            RoundedRectangle(cornerRadius: deviceFrame.screenCornerRadius)
+                .strokeBorder(Color.black, lineWidth: 4)
+                .frame(width: deviceFrame.size.width, height: deviceFrame.size.height)
+                .allowsHitTesting(false)
         }
     }
 

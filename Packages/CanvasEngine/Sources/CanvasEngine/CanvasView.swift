@@ -30,7 +30,7 @@ public struct CanvasView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
+            .contentShape(Rectangle()) // full canvas area is interactive
             .gesture(magnificationGesture)
             .overlay(alignment: .bottomTrailing) {
                 canvasControls
