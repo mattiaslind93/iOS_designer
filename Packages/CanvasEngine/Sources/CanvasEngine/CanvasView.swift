@@ -1,5 +1,6 @@
 import SwiftUI
 import DesignModel
+import AppKit
 
 /// The main design canvas with zoom, pan (Alt+drag), and the iPhone device frame.
 /// Supports element selection, drag-to-move elements, and snapping.
@@ -15,6 +16,12 @@ public struct CanvasView: View {
     @State private var isEditingPath: Bool = false
     /// Currently selected point in path edit mode
     @State private var selectedPointID: UUID? = nil
+
+    /// Canvas must be focusable to receive key events
+    @FocusState private var canvasFocused: Bool
+
+    /// NSEvent monitor for reliable key handling (Tab is eaten by focus system)
+    @State private var keyMonitor: Any? = nil
 
     public init(document: DesignDocument) {
         self.document = document
@@ -36,32 +43,16 @@ public struct CanvasView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
+            .focusable()
+            .focused($canvasFocused)
+            .focusEffectDisabled()
             .gesture(magnificationGesture)
-            .onKeyPress(.tab) {
-                handleTabKey()
-                return .handled
+            .onAppear {
+                canvasFocused = true
+                setupKeyMonitor()
             }
-            .onKeyPress(.escape) {
-                if isEditingPath {
-                    isEditingPath = false
-                    selectedPointID = nil
-                    return .handled
-                }
-                return .ignored
-            }
-            .onKeyPress(.delete) {
-                if isEditingPath, let pointID = selectedPointID,
-                   let elementID = document.selectedElementID {
-                    document.updateElement(elementID) { node in
-                        if case .vectorPath(var path, let stroke, let fill) = node.payload {
-                            path.points.removeAll { $0.id == pointID }
-                            node.payload = .vectorPath(path: path, stroke: stroke, fill: fill)
-                        }
-                    }
-                    selectedPointID = nil
-                    return .handled
-                }
-                return .ignored
+            .onDisappear {
+                removeKeyMonitor()
             }
             .overlay(alignment: .bottomTrailing) {
                 canvasControls
@@ -105,6 +96,7 @@ public struct CanvasView: View {
             document.selectedElementID = nil
             isEditingPath = false
             selectedPointID = nil
+            canvasFocused = true
         }
     }
 
@@ -138,12 +130,13 @@ public struct CanvasView: View {
                     selectedPointID: $selectedPointID,
                     document: document,
                     onSelect: { id in
-                        document.selectedElementID = id
                         // Exit path edit if selecting a different element
                         if isEditingPath && id != document.selectedElementID {
                             isEditingPath = false
                             selectedPointID = nil
                         }
+                        document.selectedElementID = id
+                        canvasFocused = true
                     },
                     onMove: { id, x, y in
                         document.updateElement(id) { node in
@@ -233,6 +226,49 @@ public struct CanvasView: View {
         .padding(8)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
         .padding()
+    }
+
+    // MARK: - Key Monitor (NSEvent)
+
+    private func setupKeyMonitor() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Tab key (keyCode 48)
+            if event.keyCode == 48 {
+                handleTabKey()
+                return nil // consume the event
+            }
+            // Escape key (keyCode 53)
+            if event.keyCode == 53 && isEditingPath {
+                if selectedPointID != nil {
+                    selectedPointID = nil
+                } else {
+                    isEditingPath = false
+                }
+                return nil
+            }
+            // Delete (keyCode 51 = backspace, 117 = forward delete)
+            if (event.keyCode == 51 || event.keyCode == 117) && isEditingPath {
+                if let pointID = selectedPointID,
+                   let elementID = document.selectedElementID {
+                    document.updateElement(elementID) { node in
+                        if case .vectorPath(var path, let stroke, let fill) = node.payload {
+                            path.points.removeAll { $0.id == pointID }
+                            node.payload = .vectorPath(path: path, stroke: stroke, fill: fill)
+                        }
+                    }
+                    selectedPointID = nil
+                    return nil
+                }
+            }
+            return event // pass through
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
     }
 
     // MARK: - Tab Key / Edit Mode
