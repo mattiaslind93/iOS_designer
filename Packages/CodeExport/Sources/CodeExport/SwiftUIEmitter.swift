@@ -149,6 +149,8 @@ public struct SwiftUIEmitter {
             return ".tint(\(emitColor(color)))"
         case .opacity(let o):
             return ".opacity(\(String(format: "%.2f", o)))"
+        case .gradientFill(let gradient):
+            return emitGradientOverlay(gradient)
         case .font(let style, let size, let weight, let design):
             if let style { return ".font(.\(style.rawValue))" }
             var parts: [String] = ["size: \(Int(size ?? 17))"]
@@ -194,6 +196,27 @@ public struct SwiftUIEmitter {
             return ".zIndex(\(Int(z)))"
         default:
             return ""
+        }
+    }
+
+    private func emitGradientOverlay(_ gradient: GradientFill) -> String {
+        let stops = gradient.stops.sorted { $0.location < $1.location }
+        let stopsCode = stops.map { stop in
+            ".init(color: \(emitColor(stop.color))\(stop.opacity < 1.0 ? ".opacity(\(String(format: "%.2f", stop.opacity)))" : ""), location: \(String(format: "%.2f", stop.location)))"
+        }.joined(separator: ", ")
+
+        switch gradient.type {
+        case .linear:
+            let angleRad = (gradient.angle - 90) * .pi / 180
+            let sx = String(format: "%.2f", 0.5 - cos(angleRad) * 0.5)
+            let sy = String(format: "%.2f", 0.5 - sin(angleRad) * 0.5)
+            let ex = String(format: "%.2f", 0.5 + cos(angleRad) * 0.5)
+            let ey = String(format: "%.2f", 0.5 + sin(angleRad) * 0.5)
+            return ".overlay(LinearGradient(gradient: Gradient(stops: [\(stopsCode)]), startPoint: UnitPoint(x: \(sx), y: \(sy)), endPoint: UnitPoint(x: \(ex), y: \(ey))))"
+        case .radial:
+            return ".overlay(RadialGradient(gradient: Gradient(stops: [\(stopsCode)]), center: UnitPoint(x: \(String(format: "%.2f", gradient.centerX)), y: \(String(format: "%.2f", gradient.centerY))), startRadius: \(Int(gradient.startRadius * 100)), endRadius: \(Int(gradient.endRadius * 200))))"
+        case .angular:
+            return ".overlay(AngularGradient(gradient: Gradient(stops: [\(stopsCode)]), center: UnitPoint(x: \(String(format: "%.2f", gradient.centerX)), y: \(String(format: "%.2f", gradient.centerY))), angle: .degrees(\(Int(gradient.angle)))))"
         }
     }
 

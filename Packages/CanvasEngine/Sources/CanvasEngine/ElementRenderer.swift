@@ -799,6 +799,9 @@ extension View {
         case .opacity(let opacity):
             self.opacity(opacity)
 
+        case .gradientFill(let gradient):
+            self.overlay(GradientFillView(gradient: gradient))
+
         case .font(let style, let size, let weight, let design):
             self.font(Self.buildFont(style: style, size: size, weight: weight, design: design))
 
@@ -931,5 +934,66 @@ extension View {
             glass = glass.interactive()
         }
         return glass
+    }
+}
+
+// MARK: - Gradient Fill View
+
+/// Renders a GradientFill as a SwiftUI gradient overlay.
+struct GradientFillView: View {
+    let gradient: GradientFill
+
+    var body: some View {
+        GeometryReader { geo in
+            let swiftGradient = buildGradient()
+            switch gradient.type {
+            case .linear:
+                LinearGradient(
+                    gradient: swiftGradient,
+                    startPoint: linearStart,
+                    endPoint: linearEnd
+                )
+            case .radial:
+                RadialGradient(
+                    gradient: swiftGradient,
+                    center: UnitPoint(x: gradient.centerX, y: gradient.centerY),
+                    startRadius: gradient.startRadius * min(geo.size.width, geo.size.height),
+                    endRadius: gradient.endRadius * max(geo.size.width, geo.size.height)
+                )
+            case .angular:
+                AngularGradient(
+                    gradient: swiftGradient,
+                    center: UnitPoint(x: gradient.centerX, y: gradient.centerY),
+                    angle: .degrees(gradient.angle)
+                )
+            }
+        }
+    }
+
+    private func buildGradient() -> Gradient {
+        let stops = gradient.stops.sorted { $0.location < $1.location }
+        return Gradient(stops: stops.map { stop in
+            Gradient.Stop(
+                color: stop.color.swiftUIColor.opacity(stop.opacity),
+                location: stop.location
+            )
+        })
+    }
+
+    /// Convert angle (degrees) to start/end UnitPoints for LinearGradient.
+    private var linearStart: UnitPoint {
+        let rad = (gradient.angle - 90) * .pi / 180
+        return UnitPoint(
+            x: 0.5 - cos(rad) * 0.5,
+            y: 0.5 - sin(rad) * 0.5
+        )
+    }
+
+    private var linearEnd: UnitPoint {
+        let rad = (gradient.angle - 90) * .pi / 180
+        return UnitPoint(
+            x: 0.5 + cos(rad) * 0.5,
+            y: 0.5 + sin(rad) * 0.5
+        )
     }
 }

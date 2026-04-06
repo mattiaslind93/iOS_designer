@@ -451,10 +451,15 @@ struct AppearanceSection: View {
                         }
                     )) {
                         Text("Solid Color").tag(FillMode.solidColor)
+                        Text("Gradient").tag(FillMode.gradient)
                         Text("Car Paint").tag(FillMode.carPaint)
                     }
                     .pickerStyle(.menu)
                     .frame(width: 130)
+                }
+
+                if element.fillMode == .gradient {
+                    GradientFillSection(element: element, document: document)
                 }
 
                 if element.fillMode == .carPaint {
@@ -556,7 +561,232 @@ struct AppearanceSection: View {
 
 enum FillMode: String {
     case solidColor
+    case gradient
     case carPaint
+}
+
+// MARK: - Gradient Fill Section
+
+struct GradientFillSection: View {
+    let element: ElementNode
+    @ObservedObject var document: DesignDocument
+
+    private var config: GradientFill {
+        element.gradientFillConfig ?? GradientFill()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Gradient")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            // Type picker
+            HStack {
+                Text("Type")
+                    .font(.callout)
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { config.type },
+                    set: { newType in
+                        var g = config
+                        g.type = newType
+                        document.updateElement(element.id) { $0.setGradientFill(g) }
+                    }
+                )) {
+                    ForEach(GradientType.allCases, id: \.self) { type in
+                        Text(type.displayName).tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+            }
+
+            // Angle (for linear) / Center (for radial/angular)
+            if config.type == .linear {
+                HStack {
+                    Text("Angle")
+                        .font(.callout)
+                    Spacer()
+                    Slider(
+                        value: Binding(
+                            get: { config.angle },
+                            set: { newAngle in
+                                var g = config
+                                g.angle = newAngle
+                                document.updateElement(element.id) { $0.setGradientFill(g) }
+                            }
+                        ),
+                        in: 0...360
+                    )
+                    .frame(width: 100)
+                    Text("\(Int(config.angle))°")
+                        .font(.caption)
+                        .frame(width: 36)
+                }
+            }
+
+            if config.type == .radial {
+                HStack {
+                    Text("Radius")
+                        .font(.callout)
+                    Spacer()
+                    Slider(
+                        value: Binding(
+                            get: { config.endRadius },
+                            set: { newR in
+                                var g = config
+                                g.endRadius = newR
+                                document.updateElement(element.id) { $0.setGradientFill(g) }
+                            }
+                        ),
+                        in: 0.1...2.0
+                    )
+                    .frame(width: 100)
+                    Text("\(Int(config.endRadius * 100))%")
+                        .font(.caption)
+                        .frame(width: 36)
+                }
+            }
+
+            // Interpolation
+            HStack {
+                Text("Falloff")
+                    .font(.callout)
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { config.interpolation },
+                    set: { newInterp in
+                        var g = config
+                        g.interpolation = newInterp
+                        document.updateElement(element.id) { $0.setGradientFill(g) }
+                    }
+                )) {
+                    ForEach(GradientInterpolation.allCases, id: \.self) { interp in
+                        Text(interp.displayName).tag(interp)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 110)
+            }
+
+            // Gradient preview bar
+            RoundedRectangle(cornerRadius: 4)
+                .fill(gradientPreview)
+                .frame(height: 20)
+
+            // Color stops
+            Text("Color Stops")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            ForEach(Array(config.stops.enumerated()), id: \.element.id) { index, stop in
+                HStack(spacing: 6) {
+                    // Color picker
+                    ColorPicker("", selection: Binding(
+                        get: {
+                            stop.color.swiftUIColor.opacity(stop.opacity)
+                        },
+                        set: { newColor in
+                            var g = config
+                            if let components = newColor.cgColor?.components, components.count >= 3 {
+                                g.stops[index].color = .custom(
+                                    red: components[0],
+                                    green: components[1],
+                                    blue: components[2],
+                                    opacity: 1.0
+                                )
+                                if components.count >= 4 {
+                                    g.stops[index].opacity = components[3]
+                                }
+                            }
+                            document.updateElement(element.id) { $0.setGradientFill(g) }
+                        }
+                    ))
+                    .labelsHidden()
+                    .frame(width: 30)
+
+                    // Location slider
+                    Slider(
+                        value: Binding(
+                            get: { stop.location },
+                            set: { newLoc in
+                                var g = config
+                                g.stops[index].location = newLoc
+                                document.updateElement(element.id) { $0.setGradientFill(g) }
+                            }
+                        ),
+                        in: 0...1
+                    )
+                    .frame(width: 80)
+
+                    Text("\(Int(stop.location * 100))%")
+                        .font(.caption2)
+                        .frame(width: 30)
+
+                    // Opacity
+                    Slider(
+                        value: Binding(
+                            get: { stop.opacity },
+                            set: { newOp in
+                                var g = config
+                                g.stops[index].opacity = newOp
+                                document.updateElement(element.id) { $0.setGradientFill(g) }
+                            }
+                        ),
+                        in: 0...1
+                    )
+                    .frame(width: 50)
+
+                    // Remove button (only if > 2 stops)
+                    if config.stops.count > 2 {
+                        Button {
+                            var g = config
+                            g.stops.remove(at: index)
+                            document.updateElement(element.id) { $0.setGradientFill(g) }
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            // Add stop button
+            Button {
+                var g = config
+                let newLocation = g.stops.count > 1
+                    ? (g.stops[g.stops.count - 2].location + g.stops[g.stops.count - 1].location) / 2
+                    : 0.5
+                g.stops.append(GradientStop(
+                    color: .system(.green),
+                    opacity: 1.0,
+                    location: newLocation
+                ))
+                document.updateElement(element.id) { $0.setGradientFill(g) }
+            } label: {
+                Label("Add Stop", systemImage: "plus.circle")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var gradientPreview: LinearGradient {
+        let stops = config.stops.sorted { $0.location < $1.location }
+        return LinearGradient(
+            gradient: Gradient(stops: stops.map { stop in
+                Gradient.Stop(
+                    color: stop.color.swiftUIColor.opacity(stop.opacity),
+                    location: stop.location
+                )
+            }),
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
 }
 
 // MARK: - Car Paint Section
@@ -1278,19 +1508,37 @@ extension ElementNode {
     var fillMode: FillMode {
         for mod in modifiers {
             if case .carPaint = mod { return .carPaint }
+            if case .gradientFill = mod { return .gradient }
         }
         return .solidColor
     }
 
     mutating func setFillMode(_ mode: FillMode) {
+        // Remove both gradient and carPaint first
+        modifiers.removeAll { mod in
+            if case .carPaint = mod { return true }
+            if case .gradientFill = mod { return true }
+            return false
+        }
         switch mode {
         case .solidColor:
-            modifiers.removeAll { if case .carPaint = $0 { return true } else { return false } }
+            break // already removed
+        case .gradient:
+            modifiers.append(.gradientFill(GradientFill()))
         case .carPaint:
-            if carPaintConfig == nil {
-                modifiers.append(.carPaint(.ferrariRed))
-            }
+            modifiers.append(.carPaint(.ferrariRed))
         }
+    }
+
+    // MARK: - Gradient Fill
+
+    var gradientFillConfig: GradientFill? {
+        modifiers.compactMap { if case .gradientFill(let g) = $0 { return g } else { return nil } }.first
+    }
+
+    mutating func setGradientFill(_ gradient: GradientFill) {
+        modifiers.removeAll { if case .gradientFill = $0 { return true } else { return false } }
+        modifiers.append(.gradientFill(gradient))
     }
 
     // MARK: - Car Paint
