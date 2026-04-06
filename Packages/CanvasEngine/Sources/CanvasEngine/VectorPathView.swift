@@ -75,12 +75,6 @@ public struct VectorPathView: View {
             }
         }
         .frame(width: totalSize.width, height: totalSize.height)
-        // Offset so the view's position matches where the path points are in the parent
-        // The view's center should be at the center of the path bounds
-        .offset(
-            x: bounds.midX - totalSize.width / 2 + strokePadding,
-            y: bounds.midY - totalSize.height / 2 + strokePadding
-        )
     }
 
     /// Build SwiftUI Path with a translation offset

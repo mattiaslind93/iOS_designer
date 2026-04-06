@@ -57,28 +57,15 @@ public struct PathEditingOverlay: View {
         return nil
     }
 
-    /// Element's frame size from modifiers
-    private var elementFrameSize: CGSize {
-        guard let element = findElement() else { return CGSize(width: 100, height: 100) }
-        var w: CGFloat = 100
-        var h: CGFloat = 100
-        for mod in element.modifiers {
-            if case .frame(let fw, let fh, _, _, _, _, _) = mod {
-                if let fw { w = fw }
-                if let fh { h = fh }
-            }
-        }
-        return CGSize(width: w, height: h)
+    /// The path's bounding rect midpoint — VectorPathView centers itself on this
+    /// in the parent ZStack, so we use it to compute the origin for overlay rendering.
+    private var pathBoundsMid: CGPoint {
+        guard let path = vectorPath else { return CGPoint(x: 50, y: 50) }
+        let b = path.boundingRect
+        guard b.width > 0 || b.height > 0 else { return CGPoint(x: 50, y: 50) }
+        return CGPoint(x: b.midX, y: b.midY)
     }
 
-    /// Convert a point from element-local coords to phone-frame coords.
-    /// Element-local (0,0) maps to the element's top-left corner in the frame.
-    /// Since the element is positioned by its parent layout + offset modifier,
-    /// and we don't know the exact layout position, we use the element offset
-    /// plus the element's center offset from the phone frame center.
-    ///
-    /// However, for simplicity and reliability, we render the overlay in the
-    /// element's own coordinate space by applying the same offset.
     private func findElement() -> ElementNode? {
         guard let pageID = document.selectedPageID,
               let page = document.pages.first(where: { $0.id == pageID }) else { return nil }
@@ -93,20 +80,26 @@ public struct PathEditingOverlay: View {
         GeometryReader { geo in
             Canvas { context, size in
                 guard let path = vectorPath else { return }
-                let fs = elementFrameSize
-                // The element is centered in its layout slot, then offset.
-                // In a ZStack root the element is centered, so its local origin
-                // (0,0) maps to: frameCenter + offset - elementSize/2
-                let originX = size.width / 2 + elementOffset.x - fs.width / 2
-                let originY = size.height / 2 + elementOffset.y - fs.height / 2
+                let mid = pathBoundsMid
+                // VectorPathView is centered in the ZStack, then moved by elementOffset.
+                // The view's center = path bounds midpoint. So path point (0,0) maps to:
+                // phoneCenter + elementOffset - boundsMid
+                let originX = size.width / 2 + elementOffset.x - mid.x
+                let originY = size.height / 2 + elementOffset.y - mid.y
                 let origin = CGPoint(x: originX, y: originY)
 
                 drawPathOutline(context: context, path: path, origin: origin)
                 drawHandles(context: context, path: path, origin: origin)
                 drawPoints(context: context, path: path, origin: origin)
 
-                // Draw element bounds (dashed rect)
-                let boundsRect = CGRect(x: originX, y: originY, width: fs.width, height: fs.height)
+                // Draw path bounding rect (dashed)
+                let b = path.boundingRect
+                let boundsRect = CGRect(
+                    x: originX + b.minX,
+                    y: originY + b.minY,
+                    width: b.width,
+                    height: b.height
+                )
                 context.stroke(
                     Path(boundsRect),
                     with: .color(.blue.opacity(0.15)),
@@ -117,9 +110,9 @@ public struct PathEditingOverlay: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        let fs = elementFrameSize
-                        let originX = geo.size.width / 2 + elementOffset.x - fs.width / 2
-                        let originY = geo.size.height / 2 + elementOffset.y - fs.height / 2
+                        let mid = pathBoundsMid
+                        let originX = geo.size.width / 2 + elementOffset.x - mid.x
+                        let originY = geo.size.height / 2 + elementOffset.y - mid.y
                         let origin = CGPoint(x: originX, y: originY)
 
                         // Convert screen coords to element-local coords
@@ -139,9 +132,9 @@ public struct PathEditingOverlay: View {
                         continueDrag(to: localCurrent, translation: value.translation)
                     }
                     .onEnded { value in
-                        let fs = elementFrameSize
-                        let originX = geo.size.width / 2 + elementOffset.x - fs.width / 2
-                        let originY = geo.size.height / 2 + elementOffset.y - fs.height / 2
+                        let mid = pathBoundsMid
+                        let originX = geo.size.width / 2 + elementOffset.x - mid.x
+                        let originY = geo.size.height / 2 + elementOffset.y - mid.y
                         let origin = CGPoint(x: originX, y: originY)
 
                         let dist = hypot(value.translation.width, value.translation.height)
