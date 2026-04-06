@@ -14,6 +14,10 @@ public class DesignDocument: ReferenceFileDocument, ObservableObject {
     @Published public var selectedPageID: UUID?
     @Published public var selectedElementID: UUID?
 
+    /// Multi-selection set. When multiple elements are box-selected,
+    /// `selectedElementID` is the "primary" (last tapped / first in set).
+    @Published public var selectedElementIDs: Set<UUID> = []
+
     // MARK: - Undo/Redo History
 
     /// Maximum number of undo snapshots kept
@@ -115,6 +119,7 @@ public class DesignDocument: ReferenceFileDocument, ObservableObject {
         let exportConfig: ExportConfig
         let selectedPageID: UUID?
         let selectedElementID: UUID?
+        let selectedElementIDs: Set<UUID>
     }
 
     private func captureSnapshot() -> DocumentSnapshot {
@@ -123,7 +128,8 @@ public class DesignDocument: ReferenceFileDocument, ObservableObject {
             tokens: tokens,
             exportConfig: exportConfig,
             selectedPageID: selectedPageID,
-            selectedElementID: selectedElementID
+            selectedElementID: selectedElementID,
+            selectedElementIDs: selectedElementIDs
         )
     }
 
@@ -165,6 +171,7 @@ public class DesignDocument: ReferenceFileDocument, ObservableObject {
         exportConfig = snapshot.exportConfig
         selectedPageID = snapshot.selectedPageID
         selectedElementID = snapshot.selectedElementID
+        selectedElementIDs = snapshot.selectedElementIDs
         isRestoring = false
     }
 
@@ -211,11 +218,44 @@ public class DesignDocument: ReferenceFileDocument, ObservableObject {
         selectedElementID = copy.id
     }
 
-    /// Delete the currently selected element.
+    /// Delete the currently selected element(s).
     public func deleteSelectedElement() {
-        guard let elementID = selectedElementID else { return }
-        pushUndo()
-        removeElement(elementID)
+        if selectedElementIDs.count > 1 {
+            pushUndo()
+            for id in selectedElementIDs {
+                removeElement(id)
+            }
+            selectedElementIDs.removeAll()
+            selectedElementID = nil
+        } else if let elementID = selectedElementID {
+            pushUndo()
+            removeElement(elementID)
+            selectedElementIDs.removeAll()
+        }
+    }
+
+    /// Select a single element (clears multi-selection).
+    public func selectElement(_ id: UUID) {
+        selectedElementID = id
+        selectedElementIDs = [id]
+    }
+
+    /// Add an element to the current selection (Shift+click).
+    public func addToSelection(_ id: UUID) {
+        selectedElementIDs.insert(id)
+        selectedElementID = id  // primary = most recent
+    }
+
+    /// Set multi-selection from box select.
+    public func setBoxSelection(_ ids: Set<UUID>) {
+        selectedElementIDs = ids
+        selectedElementID = ids.first
+    }
+
+    /// Clear all selection.
+    public func clearSelection() {
+        selectedElementID = nil
+        selectedElementIDs.removeAll()
     }
 
     // MARK: - Element Operations (with undo support)

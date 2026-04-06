@@ -161,6 +161,8 @@ public struct SwiftUIEmitter {
             return ".shadow(radius: \(Int(r)), x: \(Int(x)), y: \(Int(y)))"
         case .blur(let r):
             return ".blur(radius: \(Int(r)))"
+        case .blendMode(let mode):
+            return ".blendMode(.\(mode.rawValue))"
         case .glassEffect(let style):
             return ".glassEffect(.\(style.rawValue))"
         case .glassConfig(let config):

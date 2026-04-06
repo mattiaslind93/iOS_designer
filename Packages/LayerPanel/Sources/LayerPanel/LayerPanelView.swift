@@ -1,5 +1,6 @@
 import SwiftUI
 import DesignModel
+import AppKit
 
 /// Layer panel showing the element hierarchy as a tree view.
 /// Supports selection, visibility toggles, drag reordering, grouping, and context menus.
@@ -56,11 +57,17 @@ public struct LayerPanelView: View {
                                 node: entry.node,
                                 depth: entry.depth,
                                 parentID: entry.parentID,
-                                isSelected: document.selectedElementID == entry.node.id,
+                                isSelected: document.selectedElementID == entry.node.id || document.selectedElementIDs.contains(entry.node.id),
                                 isExpanded: expandedIDs.contains(entry.node.id),
                                 dropTarget: dropTarget,
                                 document: document,
-                                onSelect: { document.selectedElementID = entry.node.id },
+                                onSelect: {
+                                    if NSEvent.modifierFlags.contains(.shift) {
+                                        document.addToSelection(entry.node.id)
+                                    } else {
+                                        document.selectElement(entry.node.id)
+                                    }
+                                },
                                 onToggleExpand: { toggleExpand(entry.node.id) },
                                 onToggleVisibility: {
                                     document.updateElement(entry.node.id) { $0.isVisible.toggle() }

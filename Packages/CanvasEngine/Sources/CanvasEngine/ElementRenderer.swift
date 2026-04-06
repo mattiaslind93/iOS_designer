@@ -6,6 +6,7 @@ import DesignModel
 public struct ElementRenderer: View {
     let node: ElementNode
     let selectedID: UUID?
+    let selectedIDs: Set<UUID>
     let onSelect: (UUID) -> Void
     let onMove: (UUID, CGFloat, CGFloat) -> Void
     let snapSettings: SnapSettings
@@ -22,6 +23,7 @@ public struct ElementRenderer: View {
     public init(
         node: ElementNode,
         selectedID: UUID? = nil,
+        selectedIDs: Set<UUID> = [],
         snapSettings: SnapSettings = SnapSettings(),
         isRoot: Bool = true,
         isEditingPath: Binding<Bool> = .constant(false),
@@ -32,6 +34,7 @@ public struct ElementRenderer: View {
     ) {
         self.node = node
         self.selectedID = selectedID
+        self.selectedIDs = selectedIDs
         self.snapSettings = snapSettings
         self.isRoot = isRoot
         self._isEditingPath = isEditingPath
@@ -118,7 +121,7 @@ public struct ElementRenderer: View {
                     )
                     .contentShape(Rectangle())
                     .overlay {
-                        if selectedID == node.id && !isThisEditing {
+                        if (selectedID == node.id || selectedIDs.contains(node.id)) && !isThisEditing {
                             SelectionOverlay()
                         }
                     }
@@ -415,6 +418,7 @@ public struct ElementRenderer: View {
                 ElementRenderer(
                     node: child,
                     selectedID: selectedID,
+                    selectedIDs: selectedIDs,
                     snapSettings: snapSettings,
                     isRoot: false,
                     isEditingPath: $isEditingPath,
@@ -432,6 +436,7 @@ public struct ElementRenderer: View {
             ElementRenderer(
                 node: child,
                 selectedID: selectedID,
+                selectedIDs: selectedIDs,
                 snapSettings: snapSettings,
                 isRoot: false,
                 isEditingPath: $isEditingPath,
@@ -832,6 +837,9 @@ extension View {
 
         case .glassEffectContainer:
             self.glassEffect(.regular, in: .capsule)
+
+        case .blendMode(let mode):
+            self.blendMode(mode.swiftUIValue)
 
         case .carPaint(let config):
             self.overlay(CarPaintMaterialView(config: config))

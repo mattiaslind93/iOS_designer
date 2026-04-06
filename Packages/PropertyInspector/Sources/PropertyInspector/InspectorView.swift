@@ -506,6 +506,29 @@ struct AppearanceSection: View {
                     .frame(width: 36)
             }
 
+            // Blend Mode (only when no glass effect)
+            if !element.hasGlass {
+                HStack {
+                    Text("Blend")
+                        .font(.callout)
+                    Spacer()
+                    Picker("", selection: Binding(
+                        get: { element.blendModeValue },
+                        set: { newMode in
+                            document.updateElement(element.id) { node in
+                                node.setBlendMode(newMode)
+                            }
+                        }
+                    )) {
+                        ForEach(BlendModeType.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 130)
+                }
+            }
+
             // Visibility & Lock
             HStack {
                 Toggle("Visible", isOn: Binding(
@@ -1315,6 +1338,19 @@ extension ElementNode {
         // Remove any standalone glassEffect — glassConfig is the single source of truth
         modifiers.removeAll { if case .glassEffect = $0 { return true } else { return false } }
         modifiers.append(.glassConfig(config))
+    }
+
+    // MARK: - Blend Mode
+
+    var blendModeValue: BlendModeType {
+        modifiers.compactMap { if case .blendMode(let m) = $0 { return m } else { return nil } }.first ?? .normal
+    }
+
+    mutating func setBlendMode(_ mode: BlendModeType) {
+        modifiers.removeAll { if case .blendMode = $0 { return true } else { return false } }
+        if mode != .normal {
+            modifiers.append(.blendMode(mode))
+        }
     }
 
     // MARK: - Float Position

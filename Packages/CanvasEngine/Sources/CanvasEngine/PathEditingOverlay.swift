@@ -10,6 +10,7 @@ public struct PathEditingOverlay: View {
     let elementID: UUID
     @ObservedObject var document: DesignDocument
     @Binding var selectedPointID: UUID?
+    @Binding var selectedPointIDs: Set<UUID>
     @Binding var isEditingPath: Bool
 
     /// The element's offset within the phone frame (from .offset modifier)
@@ -37,12 +38,14 @@ public struct PathEditingOverlay: View {
         elementID: UUID,
         document: DesignDocument,
         selectedPointID: Binding<UUID?>,
+        selectedPointIDs: Binding<Set<UUID>>,
         isEditingPath: Binding<Bool>,
         elementOffset: CGPoint
     ) {
         self.elementID = elementID
         self.document = document
         self._selectedPointID = selectedPointID
+        self._selectedPointIDs = selectedPointIDs
         self._isEditingPath = isEditingPath
         self.elementOffset = elementOffset
     }
@@ -160,7 +163,7 @@ public struct PathEditingOverlay: View {
 
     private func drawPoints(context: GraphicsContext, path: VectorPath, origin: CGPoint) {
         for point in path.points {
-            let isSelected = point.id == selectedPointID
+            let isSelected = point.id == selectedPointID || selectedPointIDs.contains(point.id)
             let screenPos = CGPoint(x: origin.x + point.position.x, y: origin.y + point.position.y)
             let s = pointSize
 
@@ -180,7 +183,7 @@ public struct PathEditingOverlay: View {
 
     private func drawHandles(context: GraphicsContext, path: VectorPath, origin: CGPoint) {
         for point in path.points {
-            guard point.id == selectedPointID else { continue }
+            guard point.id == selectedPointID || selectedPointIDs.contains(point.id) else { continue }
             let screenPos = CGPoint(x: origin.x + point.position.x, y: origin.y + point.position.y)
 
             if let absIn = point.handleInAbsolute {

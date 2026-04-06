@@ -16,12 +16,22 @@ public struct CanvasView: View {
     @State private var isEditingPath: Bool = false
     /// Currently selected point in path edit mode
     @State private var selectedPointID: UUID? = nil
+    /// Multi-selected points in path edit mode (for box select)
+    @State private var selectedPointIDs: Set<UUID> = []
 
     /// Canvas must be focusable to receive key events
     @FocusState private var canvasFocused: Bool
 
     /// NSEvent monitor for reliable key handling (Tab is eaten by focus system)
     @State private var keyMonitor: Any? = nil
+
+    // MARK: - Box Selection State
+    /// Anchor point of the box selection in phone-frame coordinates
+    @State private var boxSelectStart: CGPoint? = nil
+    /// Current end point of the box selection
+    @State private var boxSelectEnd: CGPoint? = nil
+    /// Whether a box selection drag is active
+    @State private var isBoxSelecting: Bool = false
 
     public init(document: DesignDocument) {
         self.document = document
@@ -93,9 +103,10 @@ public struct CanvasView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .onTapGesture {
-            document.selectedElementID = nil
+            document.clearSelection()
             isEditingPath = false
             selectedPointID = nil
+            selectedPointIDs.removeAll()
             canvasFocused = true
         }
     }
@@ -124,6 +135,7 @@ public struct CanvasView: View {
                 ElementRenderer(
                     node: page.rootElement,
                     selectedID: document.selectedElementID,
+                    selectedIDs: document.selectedElementIDs,
                     snapSettings: snapSettings,
                     isRoot: true,
                     isEditingPath: $isEditingPath,
@@ -134,8 +146,14 @@ public struct CanvasView: View {
                         if isEditingPath && id != document.selectedElementID {
                             isEditingPath = false
                             selectedPointID = nil
+                            selectedPointIDs.removeAll()
                         }
-                        document.selectedElementID = id
+                        // Check for Shift key for multi-select
+                        if NSEvent.modifierFlags.contains(.shift) {
+                            document.addToSelection(id)
+                        } else {
+                            document.selectElement(id)
+                        }
                         canvasFocused = true
                     },
                     onMove: { id, x, y in
@@ -161,12 +179,23 @@ public struct CanvasView: View {
                         elementID: elementID,
                         document: document,
                         selectedPointID: $selectedPointID,
+                        selectedPointIDs: $selectedPointIDs,
                         isEditingPath: $isEditingPath,
                         elementOffset: editingElementOffset(in: page)
                     )
                     .allowsHitTesting(true)
                 }
+
+                // Box selection rectangle overlay
+                if isBoxSelecting,
+                   let start = boxSelectStart,
+                   let end = boxSelectEnd {
+                    BoxSelectionRect(start: start, end: end)
+                        .allowsHitTesting(false)
+                }
             }
+            // Box select gesture on the phone frame content area
+            .gesture(boxSelectGesture(page: page))
         }
         .gesture(panGesture)
     }
@@ -194,6 +223,148 @@ public struct CanvasView: View {
                 let newScale = max(0.1, min(3.0, scale * value.magnification))
                 scale = newScale
             }
+    }
+
+    // MARK: - Box Select Gesture
+
+    /// Drag gesture for marquee/box selection inside the phone frame.
+    /// Only active when NOT holding Option (that's for panning).
+    private func boxSelectGesture(page: DesignPage) -> some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { value in
+                // Don't box-select while Alt-dragging (pan) or editing path
+                guard !NSEvent.modifierFlags.contains(.option) else { return }
+
+                if !isBoxSelecting {
+                    isBoxSelecting = true
+                    boxSelectStart = value.startLocation
+                }
+                boxSelectEnd = value.location
+
+                // Live update: find elements whose offsets fall within the box rect
+                if let start = boxSelectStart {
+                    let rect = normalizedRect(from: start, to: value.location)
+                    let hitIDs = findElementsInRect(rect, page: page)
+                    document.setBoxSelection(hitIDs)
+                }
+            }
+            .onEnded { value in
+                guard isBoxSelecting else { return }
+
+                if let start = boxSelectStart {
+                    let rect = normalizedRect(from: start, to: value.location)
+
+                    if isEditingPath, let elementID = document.selectedElementID {
+                        // In edit mode: box-select path points
+                        boxSelectPoints(in: rect, elementID: elementID, page: page)
+                    } else {
+                        // In object mode: select elements
+                        let hitIDs = findElementsInRect(rect, page: page)
+                        if NSEvent.modifierFlags.contains(.shift) {
+                            // Add to existing selection
+                            for id in hitIDs {
+                                document.addToSelection(id)
+                            }
+                        } else {
+                            document.setBoxSelection(hitIDs)
+                        }
+                    }
+                }
+
+                isBoxSelecting = false
+                boxSelectStart = nil
+                boxSelectEnd = nil
+            }
+    }
+
+    /// Create a normalized rect (positive width/height) from two points.
+    private func normalizedRect(from a: CGPoint, to b: CGPoint) -> CGRect {
+        CGRect(
+            x: min(a.x, b.x),
+            y: min(a.y, b.y),
+            width: abs(b.x - a.x),
+            height: abs(b.y - a.y)
+        )
+    }
+
+    /// Find all top-level children (non-root) whose offset position falls within `rect`.
+    private func findElementsInRect(_ rect: CGRect, page: DesignPage) -> Set<UUID> {
+        var result: Set<UUID> = []
+        let deviceSize = page.deviceFrame.size
+
+        for child in page.rootElement.children {
+            guard child.isVisible else { continue }
+
+            // Get the element's offset position
+            var ox: CGFloat = 0
+            var oy: CGFloat = 0
+            var fw: CGFloat? = nil
+            var fh: CGFloat? = nil
+            for mod in child.modifiers {
+                if case .offset(let x, let y) = mod {
+                    ox = x; oy = y
+                }
+                if case .frame(let w, let h, _, _, _, _, _) = mod {
+                    if let w { fw = w }
+                    if let h { fh = h }
+                }
+            }
+
+            // Approximate element rect: centered at (deviceWidth/2 + ox, deviceHeight/2 + oy)
+            // unless it has a frame, in which case use that size
+            let elemW = fw ?? 60
+            let elemH = fh ?? 30
+            let elemRect = CGRect(
+                x: deviceSize.width / 2 + ox - elemW / 2,
+                y: deviceSize.height / 2 + oy - elemH / 2,
+                width: elemW,
+                height: elemH
+            )
+
+            if rect.intersects(elemRect) {
+                result.insert(child.id)
+            }
+        }
+        return result
+    }
+
+    /// Box-select vector path points that fall within the given rect.
+    private func boxSelectPoints(in rect: CGRect, elementID: UUID, page: DesignPage) {
+        guard let element = page.rootElement.find(by: elementID),
+              case .vectorPath(let path, _, _) = element.payload else { return }
+
+        // Get the element's offset
+        var ox: CGFloat = 0
+        var oy: CGFloat = 0
+        for mod in element.modifiers {
+            if case .offset(let x, let y) = mod {
+                ox = x; oy = y
+            }
+        }
+
+        // Get path bounding rect for coordinate mapping
+        let pathBounds = path.boundingRect
+        let pathMidX = pathBounds.midX
+        let pathMidY = pathBounds.midY
+        let deviceSize = page.deviceFrame.size
+
+        var newSelection: Set<UUID> = []
+        for point in path.points {
+            // Point position in phone-frame coordinates
+            let px = deviceSize.width / 2 + ox + (point.position.x - pathMidX)
+            let py = deviceSize.height / 2 + oy + (point.position.y - pathMidY)
+
+            if rect.contains(CGPoint(x: px, y: py)) {
+                newSelection.insert(point.id)
+            }
+        }
+
+        if NSEvent.modifierFlags.contains(.shift) {
+            selectedPointIDs.formUnion(newSelection)
+        } else {
+            selectedPointIDs = newSelection
+        }
+        selectedPointID = selectedPointIDs.first
     }
 
     // MARK: - Canvas Controls (bottom-right)
@@ -311,13 +482,14 @@ public struct CanvasView: View {
             // Escape key (keyCode 53)
             if event.keyCode == 53 {
                 if isEditingPath {
-                    if selectedPointID != nil {
+                    if selectedPointID != nil || !selectedPointIDs.isEmpty {
                         selectedPointID = nil
+                        selectedPointIDs.removeAll()
                     } else {
                         isEditingPath = false
                     }
                 } else {
-                    document.selectedElementID = nil
+                    document.clearSelection()
                 }
                 return nil
             }
@@ -325,21 +497,25 @@ public struct CanvasView: View {
             // Delete (keyCode 51 = backspace, 117 = forward delete)
             if event.keyCode == 51 || event.keyCode == 117 {
                 if isEditingPath {
-                    // Delete selected point in path edit mode
-                    if let pointID = selectedPointID,
+                    // Delete selected point(s) in path edit mode
+                    let pointsToDelete = selectedPointIDs.isEmpty
+                        ? (selectedPointID.map { Set([$0]) } ?? Set())
+                        : selectedPointIDs
+                    if !pointsToDelete.isEmpty,
                        let elementID = document.selectedElementID {
                         document.pushUndo()
                         document.updateElement(elementID) { node in
                             if case .vectorPath(var path, let stroke, let fill) = node.payload {
-                                path.points.removeAll { $0.id == pointID }
+                                path.points.removeAll { pointsToDelete.contains($0.id) }
                                 node.payload = .vectorPath(path: path, stroke: stroke, fill: fill)
                             }
                         }
                         selectedPointID = nil
+                        selectedPointIDs.removeAll()
                         return nil
                     }
                 } else {
-                    // Delete selected element
+                    // Delete selected element(s)
                     document.deleteSelectedElement()
                     return nil
                 }
@@ -420,5 +596,34 @@ public struct CanvasView: View {
         .padding(10)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
         .padding()
+    }
+}
+
+// MARK: - Box Selection Rectangle
+
+/// Semi-transparent blue rectangle for marquee/box selection.
+struct BoxSelectionRect: View {
+    let start: CGPoint
+    let end: CGPoint
+
+    var body: some View {
+        let rect = normalizedRect
+        Rectangle()
+            .fill(Color.accentColor.opacity(0.1))
+            .overlay(
+                Rectangle()
+                    .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
+            )
+            .frame(width: rect.width, height: rect.height)
+            .position(x: rect.midX, y: rect.midY)
+    }
+
+    private var normalizedRect: CGRect {
+        CGRect(
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(end.x - start.x),
+            height: abs(end.y - start.y)
+        )
     }
 }
