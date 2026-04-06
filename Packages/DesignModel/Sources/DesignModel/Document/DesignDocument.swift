@@ -285,6 +285,9 @@ public class DesignDocument: ReferenceFileDocument, ObservableObject {
     public func updateElement(_ elementID: UUID, transform: (inout ElementNode) -> Void) {
         guard let index = pages.firstIndex(where: { $0.id == selectedPageID }) else { return }
         _ = pages[index].rootElement.update(by: elementID, transform: transform)
+        // Explicitly notify observers — deep struct mutations inside arrays
+        // may not always trigger @Published change detection
+        objectWillChange.send()
     }
 
     /// Move an element to a new parent at a specific index.
