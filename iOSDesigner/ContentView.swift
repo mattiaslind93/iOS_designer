@@ -51,6 +51,31 @@ struct ContentView: View {
                 document.pages[index].isDarkMode.toggle()
             }
         }
+        // Undo/Redo
+        .onReceive(NotificationCenter.default.publisher(for: .performUndo)) { _ in
+            document.undo()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .performRedo)) { _ in
+            document.redo()
+        }
+        // Clipboard
+        .onReceive(NotificationCenter.default.publisher(for: .performCopy)) { _ in
+            document.copySelectedElement()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .performCut)) { _ in
+            document.cutSelectedElement()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .performPaste)) { _ in
+            document.pasteElement()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .performDuplicate)) { _ in
+            if let id = document.selectedElementID {
+                document.duplicateElement(id)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .performDelete)) { _ in
+            document.deleteSelectedElement()
+        }
     }
 
     // MARK: - Sidebar

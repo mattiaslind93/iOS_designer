@@ -263,34 +263,88 @@ public struct CanvasView: View {
 
     private func setupKeyMonitor() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            // Tab key (keyCode 48)
-            if event.keyCode == 48 {
-                handleTabKey()
-                return nil // consume the event
-            }
-            // Escape key (keyCode 53)
-            if event.keyCode == 53 && isEditingPath {
-                if selectedPointID != nil {
-                    selectedPointID = nil
+            let cmd = event.modifierFlags.contains(.command)
+            let shift = event.modifierFlags.contains(.shift)
+
+            // ⌘Z = Undo, ⌘⇧Z = Redo
+            if cmd && event.keyCode == 6 { // Z key
+                if shift {
+                    document.redo()
                 } else {
-                    isEditingPath = false
+                    document.undo()
                 }
                 return nil
             }
-            // Delete (keyCode 51 = backspace, 117 = forward delete)
-            if (event.keyCode == 51 || event.keyCode == 117) && isEditingPath {
-                if let pointID = selectedPointID,
-                   let elementID = document.selectedElementID {
-                    document.updateElement(elementID) { node in
-                        if case .vectorPath(var path, let stroke, let fill) = node.payload {
-                            path.points.removeAll { $0.id == pointID }
-                            node.payload = .vectorPath(path: path, stroke: stroke, fill: fill)
-                        }
-                    }
-                    selectedPointID = nil
+
+            // ⌘C = Copy
+            if cmd && event.keyCode == 8 { // C key
+                document.copySelectedElement()
+                return nil
+            }
+
+            // ⌘V = Paste
+            if cmd && event.keyCode == 9 { // V key
+                document.pasteElement()
+                return nil
+            }
+
+            // ⌘X = Cut
+            if cmd && event.keyCode == 7 { // X key
+                document.cutSelectedElement()
+                return nil
+            }
+
+            // ⌘D = Duplicate
+            if cmd && event.keyCode == 2 { // D key — but only if no shift (shift+D = dark mode toggle)
+                if !shift, let elementID = document.selectedElementID {
+                    document.duplicateElement(elementID)
                     return nil
                 }
             }
+
+            // Tab key (keyCode 48)
+            if event.keyCode == 48 {
+                handleTabKey()
+                return nil
+            }
+
+            // Escape key (keyCode 53)
+            if event.keyCode == 53 {
+                if isEditingPath {
+                    if selectedPointID != nil {
+                        selectedPointID = nil
+                    } else {
+                        isEditingPath = false
+                    }
+                } else {
+                    document.selectedElementID = nil
+                }
+                return nil
+            }
+
+            // Delete (keyCode 51 = backspace, 117 = forward delete)
+            if event.keyCode == 51 || event.keyCode == 117 {
+                if isEditingPath {
+                    // Delete selected point in path edit mode
+                    if let pointID = selectedPointID,
+                       let elementID = document.selectedElementID {
+                        document.pushUndo()
+                        document.updateElement(elementID) { node in
+                            if case .vectorPath(var path, let stroke, let fill) = node.payload {
+                                path.points.removeAll { $0.id == pointID }
+                                node.payload = .vectorPath(path: path, stroke: stroke, fill: fill)
+                            }
+                        }
+                        selectedPointID = nil
+                        return nil
+                    }
+                } else {
+                    // Delete selected element
+                    document.deleteSelectedElement()
+                    return nil
+                }
+            }
+
             return event // pass through
         }
     }

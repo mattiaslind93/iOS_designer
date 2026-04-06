@@ -51,6 +51,9 @@ public enum DesignModifier: Codable, Hashable {
 
     // MARK: - Positioning
 
+    /// Float position — element expands to fill parent and aligns to the chosen position.
+    /// Applied as `.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: X)`.
+    case floatPosition(AlignmentType)
     case offset(x: CGFloat, y: CGFloat)
     case rotationEffect(degrees: Double)
     case scaleEffect(x: CGFloat, y: CGFloat)

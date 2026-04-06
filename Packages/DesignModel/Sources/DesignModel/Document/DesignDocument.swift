@@ -14,6 +14,23 @@ public class DesignDocument: ReferenceFileDocument, ObservableObject {
     @Published public var selectedPageID: UUID?
     @Published public var selectedElementID: UUID?
 
+    // MARK: - Undo/Redo History
+
+    /// Maximum number of undo snapshots kept
+    private let maxUndoSteps = 30
+
+    /// Past states for undo (newest at the end)
+    private var undoStack: [DocumentSnapshot] = []
+    /// Future states for redo (newest at the end)
+    private var redoStack: [DocumentSnapshot] = []
+    /// Suppresses snapshot recording during undo/redo restore
+    private var isRestoring = false
+
+    // MARK: - Clipboard
+
+    /// Element stored for copy/paste (in-memory, shared across documents)
+    public static var clipboard: ElementNode? = nil
+
     // MARK: - Document Type
 
     public static var readableContentTypes: [UTType] { [.iosDesign] }
@@ -89,7 +106,119 @@ public class DesignDocument: ReferenceFileDocument, ObservableObject {
         }
     }
 
-    // MARK: - Element Operations
+    // MARK: - Undo / Redo
+
+    /// A lightweight snapshot of the document state for undo/redo.
+    private struct DocumentSnapshot {
+        let pages: [DesignPage]
+        let tokens: DesignTokenSet
+        let exportConfig: ExportConfig
+        let selectedPageID: UUID?
+        let selectedElementID: UUID?
+    }
+
+    private func captureSnapshot() -> DocumentSnapshot {
+        DocumentSnapshot(
+            pages: pages,
+            tokens: tokens,
+            exportConfig: exportConfig,
+            selectedPageID: selectedPageID,
+            selectedElementID: selectedElementID
+        )
+    }
+
+    /// Call before any mutation to push the current state onto the undo stack.
+    public func pushUndo() {
+        guard !isRestoring else { return }
+        undoStack.append(captureSnapshot())
+        if undoStack.count > maxUndoSteps {
+            undoStack.removeFirst()
+        }
+        // Any new edit clears the redo stack
+        redoStack.removeAll()
+    }
+
+    /// Undo the last change. Returns true if an undo was performed.
+    @discardableResult
+    public func undo() -> Bool {
+        guard let snapshot = undoStack.popLast() else { return false }
+        // Save current state for redo
+        redoStack.append(captureSnapshot())
+        restore(snapshot)
+        return true
+    }
+
+    /// Redo a previously undone change. Returns true if a redo was performed.
+    @discardableResult
+    public func redo() -> Bool {
+        guard let snapshot = redoStack.popLast() else { return false }
+        // Save current state for undo
+        undoStack.append(captureSnapshot())
+        restore(snapshot)
+        return true
+    }
+
+    private func restore(_ snapshot: DocumentSnapshot) {
+        isRestoring = true
+        pages = snapshot.pages
+        tokens = snapshot.tokens
+        exportConfig = snapshot.exportConfig
+        selectedPageID = snapshot.selectedPageID
+        selectedElementID = snapshot.selectedElementID
+        isRestoring = false
+    }
+
+    public var canUndo: Bool { !undoStack.isEmpty }
+    public var canRedo: Bool { !redoStack.isEmpty }
+
+    // MARK: - Clipboard Operations
+
+    /// Copy the selected element to the clipboard.
+    public func copySelectedElement() {
+        guard let elementID = selectedElementID,
+              let pageID = selectedPageID,
+              let page = pages.first(where: { $0.id == pageID }),
+              let element = page.rootElement.find(by: elementID) else { return }
+        Self.clipboard = element
+    }
+
+    /// Cut the selected element (copy + remove).
+    public func cutSelectedElement() {
+        copySelectedElement()
+        if let elementID = selectedElementID {
+            pushUndo()
+            removeElement(elementID)
+        }
+    }
+
+    /// Paste the clipboard element as a sibling of the selected element, or into root.
+    public func pasteElement() {
+        guard let original = Self.clipboard else { return }
+        pushUndo()
+        let copy = original.deepCopy()
+
+        // Offset the pasted element slightly so it's visible
+        if let offsetIdx = copy.modifiers.firstIndex(where: { if case .offset = $0 { return true } else { return false } }) {
+            if case .offset(let x, let y) = copy.modifiers[offsetIdx] {
+                var mutableCopy = copy
+                mutableCopy.modifiers[offsetIdx] = .offset(x: x + 16, y: y + 16)
+                addElement(mutableCopy)
+                selectedElementID = mutableCopy.id
+                return
+            }
+        }
+        addElement(copy)
+        selectedElementID = copy.id
+    }
+
+    /// Delete the currently selected element.
+    public func deleteSelectedElement() {
+        guard let elementID = selectedElementID else { return }
+        pushUndo()
+        removeElement(elementID)
+    }
+
+    // MARK: - Element Operations (with undo support)
 
     public func addElement(_ element: ElementNode, toPage pageID: UUID? = nil, parentID: UUID? = nil) {
         let targetPageID = pageID ?? selectedPageID
@@ -141,8 +270,9 @@ public class DesignDocument: ReferenceFileDocument, ObservableObject {
         }
     }
 
-    /// Duplicate an element (copies it as a sibling right after the original).
+    /// Duplicate an element (copies it as a sibling right after the original). Pushes undo.
     public func duplicateElement(_ elementID: UUID) {
+        pushUndo()
         guard let pageIndex = pages.firstIndex(where: { $0.id == selectedPageID }) else { return }
         // Find the parent that contains this element
         guard let (parentID, childIndex) = pages[pageIndex].rootElement.findParentAndIndex(of: elementID) else { return }
@@ -154,8 +284,9 @@ public class DesignDocument: ReferenceFileDocument, ObservableObject {
         selectedElementID = copy.id
     }
 
-    /// Wrap selected element(s) in a new group container.
+    /// Wrap selected element(s) in a new group container. Pushes undo.
     public func groupElement(_ elementID: UUID) {
+        pushUndo()
         guard let pageIndex = pages.firstIndex(where: { $0.id == selectedPageID }) else { return }
         guard let (parentID, childIndex) = pages[pageIndex].rootElement.findParentAndIndex(of: elementID) else { return }
         _ = pages[pageIndex].rootElement.update(by: parentID) { parent in
@@ -169,8 +300,9 @@ public class DesignDocument: ReferenceFileDocument, ObservableObject {
         }
     }
 
-    /// Ungroup: move children out and remove the group container.
+    /// Ungroup: move children out and remove the group container. Pushes undo.
     public func ungroupElement(_ elementID: UUID) {
+        pushUndo()
         guard let pageIndex = pages.firstIndex(where: { $0.id == selectedPageID }) else { return }
         guard let (parentID, childIndex) = pages[pageIndex].rootElement.findParentAndIndex(of: elementID) else { return }
         guard let groupNode = pages[pageIndex].rootElement.find(by: elementID) else { return }

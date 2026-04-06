@@ -153,6 +153,10 @@ public struct ElementRenderer: View {
         DragGesture()
             .onChanged { value in
                 guard !node.isLocked && !isRoot else { return }
+                if !isDragging {
+                    // Push undo once at drag start
+                    document?.pushUndo()
+                }
                 isDragging = true
                 var newX = value.translation.width
                 var newY = value.translation.height
@@ -831,6 +835,9 @@ extension View {
 
         case .carPaint(let config):
             self.overlay(CarPaintMaterialView(config: config))
+
+        case .floatPosition(let alignment):
+            self.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment.swiftUIValue)
 
         case .offset(let x, let y):
             self.offset(x: x, y: y)

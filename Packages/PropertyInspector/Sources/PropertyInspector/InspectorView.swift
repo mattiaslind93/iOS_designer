@@ -300,6 +300,56 @@ struct LayoutSection: View {
                 }
             }
 
+            // Float Position
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Float")
+                        .font(.callout)
+                    Spacer()
+                    Picker("", selection: Binding(
+                        get: { element.floatPosition?.rawValue ?? "none" },
+                        set: { newValue in
+                            document.updateElement(element.id) { node in
+                                if newValue == "none" {
+                                    node.setFloatPosition(nil)
+                                } else {
+                                    node.setFloatPosition(AlignmentType(rawValue: newValue))
+                                }
+                            }
+                        }
+                    )) {
+                        Text("Off").tag("none")
+                        Divider()
+                        Text("↖ Top Leading").tag("topLeading")
+                        Text("↑ Top").tag("top")
+                        Text("↗ Top Trailing").tag("topTrailing")
+                        Divider()
+                        Text("← Leading").tag("leading")
+                        Text("● Center").tag("center")
+                        Text("→ Trailing").tag("trailing")
+                        Divider()
+                        Text("↙ Bottom Leading").tag("bottomLeading")
+                        Text("↓ Bottom").tag("bottom")
+                        Text("↘ Bottom Trailing").tag("bottomTrailing")
+                    }
+                    .frame(width: 150)
+                }
+
+                // Visual 9-point alignment grid
+                if element.floatPosition != nil {
+                    AlignmentGridPicker(
+                        selected: Binding(
+                            get: { element.floatPosition ?? .center },
+                            set: { newValue in
+                                document.updateElement(element.id) { node in
+                                    node.setFloatPosition(newValue)
+                                }
+                            }
+                        )
+                    )
+                }
+            }
+
             // Offset
             HStack(spacing: 8) {
                 DimensionField(label: "X", value: element.offsetX) { newValue in
@@ -313,6 +363,53 @@ struct LayoutSection: View {
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - Alignment Grid Picker
+
+/// Visual 3×3 grid for picking float alignment position.
+struct AlignmentGridPicker: View {
+    @Binding var selected: AlignmentType
+
+    private let positions: [[AlignmentType]] = [
+        [.topLeading, .top, .topTrailing],
+        [.leading, .center, .trailing],
+        [.bottomLeading, .bottom, .bottomTrailing],
+    ]
+
+    var body: some View {
+        HStack {
+            Spacer()
+            VStack(spacing: 2) {
+                ForEach(0..<3, id: \.self) { row in
+                    HStack(spacing: 2) {
+                        ForEach(0..<3, id: \.self) { col in
+                            let alignment = positions[row][col]
+                            let isSelected = alignment == selected
+                            Button {
+                                selected = alignment
+                            } label: {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(isSelected ? Color.accentColor : Color.gray.opacity(0.25))
+                                    .frame(width: 18, height: 14)
+                                    .overlay {
+                                        if isSelected {
+                                            Circle()
+                                                .fill(Color.white)
+                                                .frame(width: 5, height: 5)
+                                        }
+                                    }
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+            }
+            .padding(4)
+            .background(Color.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            Spacer()
         }
     }
 }
@@ -1218,6 +1315,21 @@ extension ElementNode {
         // Remove any standalone glassEffect — glassConfig is the single source of truth
         modifiers.removeAll { if case .glassEffect = $0 { return true } else { return false } }
         modifiers.append(.glassConfig(config))
+    }
+
+    // MARK: - Float Position
+
+    var floatPosition: AlignmentType? {
+        modifiers.compactMap { if case .floatPosition(let a) = $0 { return a } else { return nil } }.first
+    }
+
+    mutating func setFloatPosition(_ alignment: AlignmentType?) {
+        modifiers.removeAll { if case .floatPosition = $0 { return true } else { return false } }
+        if let alignment {
+            // Insert float before offset so it takes effect first
+            let offsetIdx = modifiers.firstIndex(where: { if case .offset = $0 { return true } else { return false } })
+            modifiers.insert(.floatPosition(alignment), at: offsetIdx ?? modifiers.count)
+        }
     }
 
     private mutating func updateOrAddModifier(

@@ -179,6 +179,8 @@ public struct SwiftUIEmitter {
             return "" // Applied at container level
         case .carPaint:
             return "// Car paint material (requires CarPaintView)"
+        case .floatPosition(let alignment):
+            return ".frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .\(alignment.rawValue))"
         case .offset(let x, let y):
             return ".offset(x: \(Int(x)), y: \(Int(y)))"
         case .rotationEffect(let degrees):
