@@ -47,6 +47,20 @@ public struct ElementRenderer: View {
         return false
     }
 
+    /// Extract the VectorPath data if this is a vector path element
+    private var vectorPathData: VectorPath? {
+        if case .vectorPath(let path, _, _) = node.payload { return path }
+        return nil
+    }
+
+    /// Whether a modifier is a glass effect modifier
+    private static func isGlassModifier(_ mod: DesignModifier) -> Bool {
+        switch mod {
+        case .glassEffect, .glassConfig, .glassEffectContainer: return true
+        default: return false
+        }
+    }
+
     /// Get the element's frame size from its modifiers (for overlay sizing)
     private var elementFrameSize: CGSize {
         var w: CGFloat = 100
@@ -90,8 +104,15 @@ public struct ElementRenderer: View {
                         if case .offset = mod { return false }
                         // For vector paths, skip .frame — VectorPathView sizes itself dynamically
                         if isVectorPath, case .frame = mod { return false }
+                        // For vector paths, skip glass modifiers — applied separately with vector shape
+                        if isVectorPath, Self.isGlassModifier(mod) { return false }
                         return true
                     })
+                    // For vector paths, apply glass effects using the actual vector shape
+                    .applyVectorGlass(
+                        modifiers: isVectorPath ? node.modifiers.filter { Self.isGlassModifier($0) } : [],
+                        vectorPath: vectorPathData
+                    )
                     .contentShape(Rectangle())
                     .overlay {
                         if selectedID == node.id && !isThisEditing {
@@ -667,6 +688,62 @@ extension View {
         } else {
             self
         }
+    }
+}
+
+// MARK: - Vector Glass Application
+
+extension View {
+    /// Apply glass effect modifiers using the actual vector path shape instead of a generic capsule.
+    @ViewBuilder
+    func applyVectorGlass(modifiers: [DesignModifier], vectorPath: VectorPath?) -> some View {
+        if let vectorPath, !modifiers.isEmpty {
+            let shape = VectorPathShape(vectorPath)
+            applyVectorGlassModifiers(modifiers, shape: shape)
+        } else {
+            self
+        }
+    }
+
+    private func applyVectorGlassModifiers(_ modifiers: [DesignModifier], shape: VectorPathShape) -> some View {
+        var view = AnyView(self)
+        for mod in modifiers {
+            switch mod {
+            case .glassEffect(let style):
+                switch style {
+                case .regular:
+                    view = AnyView(view.glassEffect(.regular, in: shape))
+                case .clear:
+                    view = AnyView(view.glassEffect(.clear, in: shape))
+                case .identity:
+                    view = AnyView(view.glassEffect(.identity, in: shape))
+                }
+            case .glassConfig(let config):
+                let glass = Self.buildGlassValue(config)
+                view = AnyView(view.glassEffect(glass, in: shape))
+            case .glassEffectContainer:
+                view = AnyView(view.glassEffect(.regular, in: shape))
+            default:
+                break
+            }
+        }
+        return view
+    }
+
+    private static func buildGlassValue(_ config: GlassConfig) -> Glass {
+        var glass: Glass
+        switch config.style {
+        case .regular: glass = .regular
+        case .clear: glass = .clear
+        case .identity: glass = .identity
+        }
+        if let tint = config.tintColor {
+            glass = glass.tint(tint.swiftUIColor.opacity(config.tintIntensity))
+        }
+        if config.isInteractive {
+            glass = glass.interactive()
+        }
+        return glass
     }
 }
 

@@ -117,6 +117,72 @@ public struct VectorPathView: View {
     }
 }
 
+// MARK: - VectorPathShape (Shape + InsettableShape for glass effects etc.)
+
+/// A SwiftUI Shape built from a VectorPath, fitting within the proposed rect.
+/// Used for `.glassEffect(_:in:)` and `.clipShape()` on vector elements.
+public struct VectorPathShape: InsettableShape {
+    let vectorPath: VectorPath
+    var insetAmount: CGFloat = 0
+
+    public init(_ path: VectorPath) {
+        self.vectorPath = path
+    }
+
+    public func path(in rect: CGRect) -> Path {
+        let bounds = vectorPath.boundingRect
+        guard bounds.width > 0 || bounds.height > 0 else { return Path() }
+
+        // Scale and translate path to fit in the proposed rect
+        let sx = (rect.width - insetAmount * 2) / bounds.width
+        let sy = (rect.height - insetAmount * 2) / bounds.height
+
+        return Path { p in
+            guard !vectorPath.points.isEmpty else { return }
+
+            func mapped(_ pt: CGPoint) -> CGPoint {
+                CGPoint(x: rect.minX + insetAmount + (pt.x - bounds.minX) * sx,
+                        y: rect.minY + insetAmount + (pt.y - bounds.minY) * sy)
+            }
+
+            p.move(to: mapped(vectorPath.points[0].position))
+
+            for i in 1..<vectorPath.points.count {
+                let prev = vectorPath.points[i - 1]
+                let curr = vectorPath.points[i]
+                addSegment(to: &p, from: prev, to: curr, mapped: mapped)
+            }
+
+            if vectorPath.isClosed && vectorPath.points.count > 1 {
+                addSegment(to: &p, from: vectorPath.points.last!, to: vectorPath.points[0], mapped: mapped)
+                p.closeSubpath()
+            }
+        }
+    }
+
+    private func addSegment(to p: inout Path, from prev: PathPoint, to curr: PathPoint, mapped: (CGPoint) -> CGPoint) {
+        let currPos = mapped(curr.position)
+        let hasOut = prev.handleOut != nil
+        let hasIn = curr.handleIn != nil
+
+        if hasOut && hasIn {
+            p.addCurve(to: currPos, control1: mapped(prev.handleOutAbsolute!), control2: mapped(curr.handleInAbsolute!))
+        } else if hasOut {
+            p.addQuadCurve(to: currPos, control: mapped(prev.handleOutAbsolute!))
+        } else if hasIn {
+            p.addQuadCurve(to: currPos, control: mapped(curr.handleInAbsolute!))
+        } else {
+            p.addLine(to: currPos)
+        }
+    }
+
+    public func inset(by amount: CGFloat) -> VectorPathShape {
+        var copy = self
+        copy.insetAmount += amount
+        return copy
+    }
+}
+
 // MARK: - SwiftUI Conversions for Vector Types
 
 extension LineCapType {
