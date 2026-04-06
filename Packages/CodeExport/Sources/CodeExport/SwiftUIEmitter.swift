@@ -172,7 +172,7 @@ public struct SwiftUIEmitter {
             if config.isInteractive {
                 code += ".interactive()"
             }
-            code += ", in: .\(config.shape.rawValue)"
+            code += ", in: \(emitGlassShape(config.shape))"
             code += ")"
             return code
         case .glassEffectContainer:
@@ -192,6 +192,16 @@ public struct SwiftUIEmitter {
             return ".zIndex(\(Int(z)))"
         default:
             return ""
+        }
+    }
+
+    private func emitGlassShape(_ shape: GlassShapeType) -> String {
+        switch shape {
+        case .capsule:          return ".capsule"
+        case .circle:           return ".circle"
+        case .roundedRectangle: return "RoundedRectangle(cornerRadius: 12)"
+        case .rectangle:        return "Rectangle()"
+        case .ellipse:          return "Ellipse()"
         }
     }
 
