@@ -11,6 +11,11 @@ public struct CanvasView: View {
     @State private var showGrid: Bool = false
     @State private var snapSettings: SnapSettings = SnapSettings()
 
+    /// Whether we're in vector path edit mode (editing points/handles)
+    @State private var isEditingPath: Bool = false
+    /// Currently selected point in path edit mode
+    @State private var selectedPointID: UUID? = nil
+
     public init(document: DesignDocument) {
         self.document = document
     }
@@ -32,11 +37,43 @@ public struct CanvasView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
             .gesture(magnificationGesture)
+            .onKeyPress(.tab) {
+                handleTabKey()
+                return .handled
+            }
+            .onKeyPress(.escape) {
+                if isEditingPath {
+                    isEditingPath = false
+                    selectedPointID = nil
+                    return .handled
+                }
+                return .ignored
+            }
+            .onKeyPress(.delete) {
+                if isEditingPath, let pointID = selectedPointID,
+                   let elementID = document.selectedElementID {
+                    document.updateElement(elementID) { node in
+                        if case .vectorPath(var path, let stroke, let fill) = node.payload {
+                            path.points.removeAll { $0.id == pointID }
+                            node.payload = .vectorPath(path: path, stroke: stroke, fill: fill)
+                        }
+                    }
+                    selectedPointID = nil
+                    return .handled
+                }
+                return .ignored
+            }
             .overlay(alignment: .bottomTrailing) {
                 canvasControls
             }
             .overlay(alignment: .bottomLeading) {
                 snapControls
+            }
+            // Show edit mode indicator
+            .overlay(alignment: .top) {
+                if isEditingPath {
+                    editModeIndicator
+                }
             }
         }
     }
@@ -66,6 +103,8 @@ public struct CanvasView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .onTapGesture {
             document.selectedElementID = nil
+            isEditingPath = false
+            selectedPointID = nil
         }
     }
 
@@ -95,8 +134,16 @@ public struct CanvasView: View {
                     selectedID: document.selectedElementID,
                     snapSettings: snapSettings,
                     isRoot: true,
+                    isEditingPath: $isEditingPath,
+                    selectedPointID: $selectedPointID,
+                    document: document,
                     onSelect: { id in
                         document.selectedElementID = id
+                        // Exit path edit if selecting a different element
+                        if isEditingPath && id != document.selectedElementID {
+                            isEditingPath = false
+                            selectedPointID = nil
+                        }
                     },
                     onMove: { id, x, y in
                         document.updateElement(id) { node in
@@ -186,6 +233,41 @@ public struct CanvasView: View {
         .padding(8)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
         .padding()
+    }
+
+    // MARK: - Tab Key / Edit Mode
+
+    private func handleTabKey() {
+        guard let elementID = document.selectedElementID,
+              let pageID = document.selectedPageID,
+              let page = document.pages.first(where: { $0.id == pageID }),
+              let element = page.rootElement.find(by: elementID) else {
+            isEditingPath = false
+            return
+        }
+        // Only enter edit mode for vector paths
+        if case .vectorPath = element.payload {
+            isEditingPath.toggle()
+            if !isEditingPath {
+                selectedPointID = nil
+            }
+        }
+    }
+
+    private var editModeIndicator: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "pencil.and.outline")
+                .font(.caption)
+            Text("Edit Mode")
+                .font(.caption.weight(.medium))
+            Text("— Tab to exit, Click to add points, Delete to remove")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: Capsule())
+        .padding(.top, 8)
     }
 
     // MARK: - Snap Controls (bottom-left)

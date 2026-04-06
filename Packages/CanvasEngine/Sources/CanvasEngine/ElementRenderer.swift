@@ -11,6 +11,11 @@ public struct ElementRenderer: View {
     let snapSettings: SnapSettings
     let isRoot: Bool
 
+    // Path editing state (passed down from CanvasView)
+    @Binding var isEditingPath: Bool
+    @Binding var selectedPointID: UUID?
+    var document: DesignDocument?
+
     @State private var dragOffset: CGSize = .zero
     @State private var isDragging = false
 
@@ -19,6 +24,9 @@ public struct ElementRenderer: View {
         selectedID: UUID? = nil,
         snapSettings: SnapSettings = SnapSettings(),
         isRoot: Bool = true,
+        isEditingPath: Binding<Bool> = .constant(false),
+        selectedPointID: Binding<UUID?> = .constant(nil),
+        document: DesignDocument? = nil,
         onSelect: @escaping (UUID) -> Void = { _ in },
         onMove: @escaping (UUID, CGFloat, CGFloat) -> Void = { _, _, _ in }
     ) {
@@ -26,8 +34,30 @@ public struct ElementRenderer: View {
         self.selectedID = selectedID
         self.snapSettings = snapSettings
         self.isRoot = isRoot
+        self._isEditingPath = isEditingPath
+        self._selectedPointID = selectedPointID
+        self.document = document
         self.onSelect = onSelect
         self.onMove = onMove
+    }
+
+    /// Whether this node is a vector path
+    private var isVectorPath: Bool {
+        if case .vectorPath = node.payload { return true }
+        return false
+    }
+
+    /// Get the element's frame size from its modifiers (for overlay sizing)
+    private var elementFrameSize: CGSize {
+        var w: CGFloat = 100
+        var h: CGFloat = 100
+        for mod in node.modifiers {
+            if case .frame(let fw, let fh, _, _, _, _, _) = mod {
+                if let fw { w = fw }
+                if let fh { h = fh }
+            }
+        }
+        return CGSize(width: w, height: h)
     }
 
     /// Stored offset from the node's modifiers (separate from live drag offset)
@@ -54,6 +84,7 @@ public struct ElementRenderer: View {
                     .contentShape(Rectangle())
                     .id(node.id)
             } else {
+                let isThisEditing = isEditingPath && selectedID == node.id && isVectorPath
                 renderPayload()
                     .applyModifiers(node.modifiers.filter { mod in
                         if case .offset = mod { return false }
@@ -61,8 +92,19 @@ public struct ElementRenderer: View {
                     })
                     .contentShape(Rectangle())
                     .overlay {
-                        if selectedID == node.id {
+                        if selectedID == node.id && !isThisEditing {
                             SelectionOverlay()
+                        }
+                    }
+                    .overlay {
+                        if isThisEditing, let doc = document {
+                            PathEditingOverlay(
+                                elementID: node.id,
+                                document: doc,
+                                selectedPointID: $selectedPointID,
+                                isEditingPath: $isEditingPath,
+                                frameSize: elementFrameSize
+                            )
                         }
                     }
                     // Apply stored offset + live drag offset together so overlay follows
@@ -70,9 +112,18 @@ public struct ElementRenderer: View {
                         width: storedOffset.width + dragOffset.width,
                         height: storedOffset.height + dragOffset.height
                     ))
-                    .gesture(elementDragGesture)
+                    .conditionalDragGesture(isEnabled: !isThisEditing, gesture: elementDragGesture)
+                    .onTapGesture(count: 2) {
+                        // Double-click to enter edit mode on vector paths
+                        if isVectorPath && !isEditingPath {
+                            onSelect(node.id)
+                            isEditingPath = true
+                        }
+                    }
                     .onTapGesture {
-                        onSelect(node.id)
+                        if !isThisEditing {
+                            onSelect(node.id)
+                        }
                     }
                     .id(node.id)
             }
@@ -325,6 +376,9 @@ public struct ElementRenderer: View {
                 selectedID: selectedID,
                 snapSettings: snapSettings,
                 isRoot: false,
+                isEditingPath: $isEditingPath,
+                selectedPointID: $selectedPointID,
+                document: document,
                 onSelect: onSelect,
                 onMove: onMove
             )
@@ -569,6 +623,19 @@ class MotionManager: ObservableObject {
             NSEvent.removeMonitor(tracker)
         }
         #endif
+    }
+}
+
+// MARK: - Conditional Gesture
+
+extension View {
+    @ViewBuilder
+    func conditionalDragGesture<G: Gesture>(isEnabled: Bool, gesture: G) -> some View {
+        if isEnabled {
+            self.gesture(gesture)
+        } else {
+            self
+        }
     }
 }
 
