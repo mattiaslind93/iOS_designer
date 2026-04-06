@@ -11,6 +11,8 @@ public struct ElementNode: Identifiable, Codable, Hashable {
     public var children: [ElementNode]
     public var isLocked: Bool
     public var isVisible: Bool
+    /// Boolean operation config — when set, this vector path acts as a boolean mask on a target sibling
+    public var booleanConfig: BooleanConfig?
 
     public init(
         id: UUID = UUID(),
@@ -19,7 +21,8 @@ public struct ElementNode: Identifiable, Codable, Hashable {
         modifiers: [DesignModifier] = [],
         children: [ElementNode] = [],
         isLocked: Bool = false,
-        isVisible: Bool = true
+        isVisible: Bool = true,
+        booleanConfig: BooleanConfig? = nil
     ) {
         self.id = id
         self.name = name
@@ -28,6 +31,7 @@ public struct ElementNode: Identifiable, Codable, Hashable {
         self.children = children
         self.isLocked = isLocked
         self.isVisible = isVisible
+        self.booleanConfig = booleanConfig
     }
 
     public var isContainer: Bool {

@@ -243,6 +243,51 @@ public enum VectorShapePreset: String, Codable, Hashable, CaseIterable {
     }
 }
 
+// MARK: - Boolean Operations
+
+/// Boolean operation type for combining vector paths.
+/// The element acts as a mask/cutter against a target sibling element.
+public struct BooleanConfig: Codable, Hashable {
+    /// The boolean operation to perform
+    public var operation: BooleanOperation
+    /// ID of the target element this boolean operates on (a sibling vector path)
+    public var targetElementID: UUID?
+
+    public init(operation: BooleanOperation = .subtract, targetElementID: UUID? = nil) {
+        self.operation = operation
+        self.targetElementID = targetElementID
+    }
+}
+
+public enum BooleanOperation: String, Codable, Hashable, CaseIterable {
+    /// Removes this shape from the target (cut out)
+    case subtract
+    /// Keeps only where both shapes overlap
+    case intersect
+    /// Combines both shapes into one
+    case union
+    /// Keeps only non-overlapping areas
+    case difference
+
+    public var displayName: String {
+        switch self {
+        case .subtract:   return "Subtract"
+        case .intersect:  return "Intersect"
+        case .union:      return "Union"
+        case .difference: return "Difference"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .subtract:   return "minus.square"
+        case .intersect:  return "square.on.square.intersection.dashed"
+        case .union:      return "square.on.square"
+        case .difference: return "square.on.square.squareshape.controlhandles"
+        }
+    }
+}
+
 // MARK: - Imported Image
 
 /// Image data stored inline in the document for portability.

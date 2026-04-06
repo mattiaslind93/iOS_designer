@@ -53,6 +53,8 @@ public struct InspectorView: View {
                         Divider()
                         VectorFillSection(element: element, document: document)
                         Divider()
+                        BooleanSection(element: element, document: document)
+                        Divider()
                     }
 
                     // Imported image section
@@ -1542,6 +1544,86 @@ struct ImportedImageSection: View {
                     }
                 }
                 .pickerStyle(.segmented)
+            }
+        }
+    }
+}
+
+// MARK: - Boolean Section
+
+struct BooleanSection: View {
+    let element: ElementNode
+    @ObservedObject var document: DesignDocument
+
+    /// All sibling vector elements that can be targeted
+    private var siblingVectors: [ElementNode] {
+        guard let pageID = document.selectedPageID,
+              let page = document.pages.first(where: { $0.id == pageID }) else { return [] }
+
+        // Find parent of this element
+        guard let (parentID, _) = page.rootElement.findParentAndIndex(of: element.id),
+              let parent = page.rootElement.find(by: parentID) else { return [] }
+
+        return parent.children.filter { child in
+            child.id != element.id && {
+                if case .vectorPath = child.payload { return true }
+                return false
+            }()
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Boolean")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            let hasBoolean = element.booleanConfig != nil
+            Toggle("Boolean Operation", isOn: Binding(
+                get: { hasBoolean },
+                set: { enabled in
+                    document.updateElement(element.id) { node in
+                        node.booleanConfig = enabled ? BooleanConfig() : nil
+                    }
+                }
+            ))
+
+            if let config = element.booleanConfig {
+                // Operation type
+                Picker("Operation", selection: Binding(
+                    get: { config.operation },
+                    set: { newOp in
+                        document.updateElement(element.id) { node in
+                            node.booleanConfig?.operation = newOp
+                        }
+                    }
+                )) {
+                    ForEach(BooleanOperation.allCases, id: \.self) { op in
+                        Label(op.displayName, systemImage: op.icon).tag(op)
+                    }
+                }
+
+                // Target element dropdown
+                Picker("Target", selection: Binding(
+                    get: { config.targetElementID },
+                    set: { newTarget in
+                        document.updateElement(element.id) { node in
+                            node.booleanConfig?.targetElementID = newTarget
+                        }
+                    }
+                )) {
+                    Text("None").tag(UUID?.none)
+                    ForEach(siblingVectors) { sibling in
+                        Label(sibling.name, systemImage: "scribble.variable")
+                            .tag(UUID?.some(sibling.id))
+                    }
+                }
+
+                if siblingVectors.isEmpty {
+                    Text("Add another vector shape as sibling to use boolean operations")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
     }

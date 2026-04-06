@@ -370,7 +370,44 @@ public struct ElementRenderer: View {
 
     @ViewBuilder
     private func renderChildren() -> some View {
-        ForEach(node.children) { child in
+        // Separate boolean elements from normal elements
+        let normalChildren = node.children.filter { $0.booleanConfig == nil }
+        let booleanChildren = node.children.filter { $0.booleanConfig != nil }
+
+        ForEach(normalChildren) { child in
+            // Check if any boolean child targets this element
+            let booleans = booleanChildren.filter { $0.booleanConfig?.targetElementID == child.id }
+            if !booleans.isEmpty, case .vectorPath = child.payload {
+                // Render with boolean masking
+                BooleanMaskedElement(
+                    target: child,
+                    booleans: booleans,
+                    selectedID: selectedID,
+                    snapSettings: snapSettings,
+                    isEditingPath: $isEditingPath,
+                    selectedPointID: $selectedPointID,
+                    document: document,
+                    onSelect: onSelect,
+                    onMove: onMove
+                )
+            } else {
+                ElementRenderer(
+                    node: child,
+                    selectedID: selectedID,
+                    snapSettings: snapSettings,
+                    isRoot: false,
+                    isEditingPath: $isEditingPath,
+                    selectedPointID: $selectedPointID,
+                    document: document,
+                    onSelect: onSelect,
+                    onMove: onMove
+                )
+            }
+        }
+
+        // Also render boolean elements themselves (dimmed, with dashed outline)
+        // so they're visible and selectable on the canvas
+        ForEach(booleanChildren) { child in
             ElementRenderer(
                 node: child,
                 selectedID: selectedID,
@@ -382,6 +419,7 @@ public struct ElementRenderer: View {
                 onSelect: onSelect,
                 onMove: onMove
             )
+            .opacity(selectedID == child.id ? 0.6 : 0.25)
         }
     }
 }
