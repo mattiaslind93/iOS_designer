@@ -2,6 +2,8 @@ import SwiftUI
 import DesignModel
 
 /// Renders a VectorPath as a SwiftUI Path with optional fill and stroke.
+/// Dynamically sizes itself to the path's bounding rect plus stroke padding,
+/// so the selection overlay and clipping always match the actual shape.
 public struct VectorPathView: View {
     let path: VectorPath
     let stroke: VectorStrokeStyle?
@@ -13,82 +15,110 @@ public struct VectorPathView: View {
         self.fill = fill
     }
 
-    public var body: some View {
-        ZStack {
-            // Fill layer
-            if let fill {
-                swiftUIPath
-                    .fill(fill.swiftUIColor, style: FillStyle(eoFill: path.fillRule == .evenOdd))
-            }
-
-            // Stroke layer
-            if let stroke {
-                swiftUIPath
-                    .stroke(
-                        stroke.color.swiftUIColor,
-                        style: StrokeStyle(
-                            lineWidth: stroke.width,
-                            lineCap: stroke.lineCap.swiftUIValue,
-                            lineJoin: stroke.lineJoin.swiftUIValue,
-                            miterLimit: stroke.miterLimit,
-                            dash: stroke.dashPattern,
-                            dashPhase: 0
-                        )
-                    )
-            }
-
-            // If neither fill nor stroke, show a default stroke so it's visible
-            if fill == nil && stroke == nil {
-                swiftUIPath
-                    .stroke(Color.primary, lineWidth: 2)
-            }
-        }
+    /// Padding around the path bounds to account for stroke width
+    private var strokePadding: CGFloat {
+        guard let stroke else { return 1 }
+        return stroke.width / 2 + 1
     }
 
-    /// Convert VectorPath to SwiftUI Path
-    private var swiftUIPath: Path {
+    /// The bounding rect of the path
+    private var bounds: CGRect {
+        let b = path.boundingRect
+        guard b.width > 0 || b.height > 0 else {
+            return CGRect(x: 0, y: 0, width: 1, height: 1)
+        }
+        return b
+    }
+
+    /// Total size including stroke padding
+    private var totalSize: CGSize {
+        let b = bounds
+        let pad = strokePadding * 2
+        return CGSize(
+            width: max(b.width + pad, 1),
+            height: max(b.height + pad, 1)
+        )
+    }
+
+    public var body: some View {
+        Canvas { context, size in
+            // Translate so path origin (bounds.minX, bounds.minY) maps to (strokePadding, strokePadding)
+            let offsetX = -bounds.minX + strokePadding
+            let offsetY = -bounds.minY + strokePadding
+
+            let swiftPath = buildPath(offsetX: offsetX, offsetY: offsetY)
+
+            // Fill
+            if let fill {
+                context.fill(swiftPath, with: .color(fill.swiftUIColor), style: FillStyle(eoFill: path.fillRule == .evenOdd))
+            }
+
+            // Stroke
+            if let stroke {
+                context.stroke(
+                    swiftPath,
+                    with: .color(stroke.color.swiftUIColor),
+                    style: StrokeStyle(
+                        lineWidth: stroke.width,
+                        lineCap: stroke.lineCap.swiftUIValue,
+                        lineJoin: stroke.lineJoin.swiftUIValue,
+                        miterLimit: stroke.miterLimit,
+                        dash: stroke.dashPattern,
+                        dashPhase: 0
+                    )
+                )
+            }
+
+            // Default stroke if neither fill nor stroke
+            if fill == nil && stroke == nil {
+                context.stroke(swiftPath, with: .color(.primary), lineWidth: 2)
+            }
+        }
+        .frame(width: totalSize.width, height: totalSize.height)
+        // Offset so the view's position matches where the path points are in the parent
+        // The view's center should be at the center of the path bounds
+        .offset(
+            x: bounds.midX - totalSize.width / 2 + strokePadding,
+            y: bounds.midY - totalSize.height / 2 + strokePadding
+        )
+    }
+
+    /// Build SwiftUI Path with a translation offset
+    private func buildPath(offsetX: CGFloat, offsetY: CGFloat) -> Path {
         Path { p in
             guard !path.points.isEmpty else { return }
 
-            p.move(to: path.points[0].position)
+            let first = path.points[0]
+            p.move(to: CGPoint(x: first.position.x + offsetX, y: first.position.y + offsetY))
 
             for i in 1..<path.points.count {
-                let prev = path.points[i - 1]
-                let curr = path.points[i]
-                addSegment(to: &p, from: prev, to: curr)
+                addSegment(to: &p, from: path.points[i - 1], to: path.points[i], ox: offsetX, oy: offsetY)
             }
 
-            // Close path: connect last point back to first
             if path.isClosed && path.points.count > 1 {
-                let last = path.points[path.points.count - 1]
-                let first = path.points[0]
-                addSegment(to: &p, from: last, to: first)
+                addSegment(to: &p, from: path.points.last!, to: path.points[0], ox: offsetX, oy: offsetY)
                 p.closeSubpath()
             }
         }
     }
 
-    /// Add a segment between two PathPoints, choosing line vs curve based on handles.
-    private func addSegment(to p: inout Path, from prev: PathPoint, to curr: PathPoint) {
-        let hasHandleOut = prev.handleOut != nil
-        let hasHandleIn = curr.handleIn != nil
+    private func addSegment(to p: inout Path, from prev: PathPoint, to curr: PathPoint, ox: CGFloat, oy: CGFloat) {
+        let currPos = CGPoint(x: curr.position.x + ox, y: curr.position.y + oy)
+        let hasOut = prev.handleOut != nil
+        let hasIn = curr.handleIn != nil
 
-        if hasHandleOut && hasHandleIn {
-            // Cubic bezier
-            p.addCurve(
-                to: curr.position,
-                control1: prev.handleOutAbsolute!,
-                control2: curr.handleInAbsolute!
-            )
-        } else if hasHandleOut {
-            // Quadratic with outgoing handle
-            p.addQuadCurve(to: curr.position, control: prev.handleOutAbsolute!)
-        } else if hasHandleIn {
-            // Quadratic with incoming handle
-            p.addQuadCurve(to: curr.position, control: curr.handleInAbsolute!)
+        if hasOut && hasIn {
+            let c1 = CGPoint(x: prev.handleOutAbsolute!.x + ox, y: prev.handleOutAbsolute!.y + oy)
+            let c2 = CGPoint(x: curr.handleInAbsolute!.x + ox, y: curr.handleInAbsolute!.y + oy)
+            p.addCurve(to: currPos, control1: c1, control2: c2)
+        } else if hasOut {
+            let c = CGPoint(x: prev.handleOutAbsolute!.x + ox, y: prev.handleOutAbsolute!.y + oy)
+            p.addQuadCurve(to: currPos, control: c)
+        } else if hasIn {
+            let c = CGPoint(x: curr.handleInAbsolute!.x + ox, y: curr.handleInAbsolute!.y + oy)
+            p.addQuadCurve(to: currPos, control: c)
         } else {
-            // Straight line
-            p.addLine(to: curr.position)
+            p.addLine(to: currPos)
         }
     }
 }

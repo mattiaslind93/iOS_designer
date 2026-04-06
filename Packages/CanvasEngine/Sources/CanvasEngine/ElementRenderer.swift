@@ -88,6 +88,8 @@ public struct ElementRenderer: View {
                 renderPayload()
                     .applyModifiers(node.modifiers.filter { mod in
                         if case .offset = mod { return false }
+                        // For vector paths, skip .frame — VectorPathView sizes itself dynamically
+                        if isVectorPath, case .frame = mod { return false }
                         return true
                     })
                     .contentShape(Rectangle())

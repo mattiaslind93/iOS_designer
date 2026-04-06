@@ -3,16 +3,12 @@ import DesignModel
 
 /// Renders a target vector element with boolean operations applied from sibling vector elements.
 ///
+/// Dynamically sizes to the combined bounding box of all involved paths.
 /// Uses Canvas rendering with blend modes for correct boolean compositing:
-/// - **Subtract**: Renders target, then erases where the boolean shape overlaps (destinationOut)
-/// - **Union**: Renders both shapes combined into one
-/// - **Intersect**: Only shows where both shapes overlap
-/// - **Difference (XOR)**: Shows non-overlapping areas of both shapes
-///
-/// Coordinate mapping: Both the target and boolean elements have path points in their own
-/// local coordinate space (typically 0..frameWidth, 0..frameHeight). Since both are children
-/// of the same parent (ZStack), they're centered. We compute the boolean path's offset
-/// relative to the target's coordinate space using their respective frame sizes and offsets.
+/// - **Subtract**: Erases cutter area from target (destinationOut)
+/// - **Union**: Renders both shapes combined
+/// - **Intersect**: Only shows where both shapes overlap (destinationIn)
+/// - **Difference (XOR)**: Shows non-overlapping areas (even-odd fill)
 struct BooleanMaskedElement: View {
     let target: ElementNode
     let booleans: [ElementNode]
@@ -29,79 +25,116 @@ struct BooleanMaskedElement: View {
             return AnyView(EmptyView())
         }
 
-        let targetSize = frameSize(of: target)
-        let targetOff = elementOffset(of: target)
+        let fillColor = (targetFill ?? .system(.accentColor)).swiftUIColor
+        let strokePad = (targetStroke?.width ?? 2) / 2 + 2
+
+        // Compute the combined bounding rect in a shared coordinate space.
+        // We use the parent's coordinate space where each element is centered + offset.
+        var combinedBounds = pathBoundsInParent(path: targetPath, node: target)
+
+        // Collect boolean paths with their relative offsets
+        var boolOps: [(BooleanOperation, Path)] = []
+        for boolNode in booleans {
+            guard let config = boolNode.booleanConfig,
+                  case .vectorPath(let boolPath, _, _) = boolNode.payload else { continue }
+
+            let boolBounds = pathBoundsInParent(path: boolPath, node: boolNode)
+            combinedBounds = combinedBounds.union(boolBounds)
+
+            // Build the boolean path in parent coordinates
+            let boolParentPath = buildPathInParent(from: boolPath, node: boolNode)
+            boolOps.append((config.operation, boolParentPath))
+        }
+
+        // Add stroke padding
+        let canvasBounds = combinedBounds.insetBy(dx: -strokePad, dy: -strokePad)
+        let canvasSize = CGSize(
+            width: max(canvasBounds.width, 1),
+            height: max(canvasBounds.height, 1)
+        )
+
+        // Build target path in parent coordinates
+        let targetParentPath = buildPathInParent(from: targetPath, node: target)
 
         return AnyView(
             Canvas { context, size in
-                let fillColor = (targetFill ?? .system(.accentColor)).swiftUIColor
+                // Translate from parent coords to canvas-local coords
+                let tx = -canvasBounds.minX
+                let ty = -canvasBounds.minY
 
-                // Determine which operations we need
-                for boolNode in booleans {
-                    guard let config = boolNode.booleanConfig,
-                          case .vectorPath(let boolPath, _, _) = boolNode.payload else { continue }
+                // Translate all paths to canvas-local space
+                let localTarget = targetParentPath.offsetBy(dx: tx, dy: ty)
 
-                    let boolSize = frameSize(of: boolNode)
-                    let boolOff = elementOffset(of: boolNode)
+                for (operation, boolPath) in boolOps {
+                    let localBool = boolPath.offsetBy(dx: tx, dy: ty)
 
-                    // Offset to convert boolean points from bool-local to target-local coords:
-                    // In the parent ZStack (centered), each element's origin is at:
-                    //   parentCenter - elementSize/2 + elementOffset
-                    // So bool-local → target-local:
-                    //   target_local = bool_local + (targetSize/2 - boolSize/2) + (boolOffset - targetOffset)
-                    let dx = targetSize.width / 2 - boolSize.width / 2 + boolOff.x - targetOff.x
-                    let dy = targetSize.height / 2 - boolSize.height / 2 + boolOff.y - targetOff.y
-                    let relativeOffset = CGPoint(x: dx, y: dy)
-
-                    let targetSwiftPath = buildPath(from: targetPath)
-                    let boolSwiftPath = buildPath(from: boolPath, offset: relativeOffset)
-
-                    switch config.operation {
+                    switch operation {
                     case .subtract:
-                        renderSubtract(
-                            context: &context, size: size,
-                            targetPath: targetSwiftPath, cutterPath: boolSwiftPath,
-                            fillColor: fillColor,
-                            stroke: targetStroke
-                        )
+                        context.drawLayer { layerCtx in
+                            layerCtx.fill(localTarget, with: .color(fillColor))
+                            layerCtx.blendMode = .destinationOut
+                            layerCtx.fill(localBool, with: .color(.white))
+                        }
+                        // Stroke both outlines
+                        if let stroke = targetStroke {
+                            strokePath(&context, localTarget, stroke)
+                            // Stroke the cutter outline too (dashed, dimmed)
+                            context.stroke(localBool, with: .color(stroke.color.swiftUIColor.opacity(0.3)),
+                                style: StrokeStyle(lineWidth: stroke.width * 0.5, dash: [4, 4]))
+                        }
+
                     case .union:
-                        renderUnion(
-                            context: &context, size: size,
-                            targetPath: targetSwiftPath, addPath: boolSwiftPath,
-                            fillColor: fillColor, addColor: fillColor,
-                            stroke: targetStroke
-                        )
+                        context.fill(localTarget, with: .color(fillColor))
+                        context.fill(localBool, with: .color(fillColor))
+                        if let stroke = targetStroke {
+                            // Stroke outer edges only — draw both, then erase inner overlaps
+                            context.drawLayer { layerCtx in
+                                layerCtx.stroke(localTarget, with: .color(stroke.color.swiftUIColor),
+                                    style: StrokeStyle(lineWidth: stroke.width, lineCap: stroke.lineCap.swiftUIValue,
+                                        lineJoin: stroke.lineJoin.swiftUIValue))
+                                layerCtx.stroke(localBool, with: .color(stroke.color.swiftUIColor),
+                                    style: StrokeStyle(lineWidth: stroke.width, lineCap: stroke.lineCap.swiftUIValue,
+                                        lineJoin: stroke.lineJoin.swiftUIValue))
+                            }
+                        }
+
                     case .intersect:
-                        renderIntersect(
-                            context: &context, size: size,
-                            targetPath: targetSwiftPath, maskPath: boolSwiftPath,
-                            fillColor: fillColor,
-                            stroke: targetStroke
-                        )
+                        context.drawLayer { layerCtx in
+                            layerCtx.fill(localTarget, with: .color(fillColor))
+                            layerCtx.blendMode = .destinationIn
+                            layerCtx.fill(localBool, with: .color(.white))
+                        }
+                        if let stroke = targetStroke {
+                            strokePath(&context, localTarget, stroke)
+                        }
+
                     case .difference:
-                        renderDifference(
-                            context: &context, size: size,
-                            pathA: targetSwiftPath, pathB: boolSwiftPath,
-                            fillColor: fillColor,
-                            stroke: targetStroke
-                        )
+                        var combined = localTarget
+                        combined.addPath(localBool)
+                        context.fill(combined, with: .color(fillColor), style: FillStyle(eoFill: true))
+                        if let stroke = targetStroke {
+                            strokePath(&context, localTarget, stroke)
+                            strokePath(&context, localBool, stroke)
+                        }
                     }
                 }
 
-                // If no boolean operations matched, just render the target normally
-                if booleans.allSatisfy({ $0.booleanConfig == nil }) {
-                    let p = buildPath(from: targetPath)
-                    context.fill(p, with: .color(fillColor))
+                // If no boolean operations matched, render normally
+                if boolOps.isEmpty {
+                    let localTarget = targetParentPath.offsetBy(dx: tx, dy: ty)
+                    context.fill(localTarget, with: .color(fillColor))
                     if let stroke = targetStroke {
-                        strokePath(&context, p, stroke)
+                        strokePath(&context, localTarget, stroke)
                     }
                 }
             }
-            .frame(width: targetSize.width, height: targetSize.height)
+            .frame(width: canvasSize.width, height: canvasSize.height)
+            // Position the canvas so its content aligns with the parent layout
+            .offset(x: canvasBounds.midX, y: canvasBounds.midY)
             .applyModifiers(target.modifiers.filter { mod in
                 if case .offset = mod { return false }
-                if case .frame = mod { return false }  // frame handled above
-                if case .foregroundStyle = mod { return false }  // fill handled in canvas
+                if case .frame = mod { return false }
+                if case .foregroundStyle = mod { return false }
                 return true
             })
             .contentShape(Rectangle())
@@ -110,87 +143,11 @@ struct BooleanMaskedElement: View {
                     SelectionOverlay()
                 }
             }
-            .offset(CGSize(width: targetOff.x, height: targetOff.y))
             .onTapGesture {
                 onSelect(target.id)
             }
             .id(target.id)
         )
-    }
-
-    // MARK: - Boolean Renderers
-
-    /// Subtract: Draw target, then erase where cutter overlaps
-    private func renderSubtract(
-        context: inout GraphicsContext, size: CGSize,
-        targetPath: Path, cutterPath: Path,
-        fillColor: Color, stroke: VectorStrokeStyle?
-    ) {
-        // Draw into a layer so destinationOut only affects the target
-        context.drawLayer { layerCtx in
-            // 1. Fill the target
-            layerCtx.fill(targetPath, with: .color(fillColor))
-            // 2. Erase the cutter area
-            layerCtx.blendMode = .destinationOut
-            layerCtx.fill(cutterPath, with: .color(.white))
-        }
-
-        // Stroke the resulting outline
-        if let stroke {
-            strokePath(&context, targetPath, stroke)
-        }
-    }
-
-    /// Union: Draw both shapes combined
-    private func renderUnion(
-        context: inout GraphicsContext, size: CGSize,
-        targetPath: Path, addPath: Path,
-        fillColor: Color, addColor: Color, stroke: VectorStrokeStyle?
-    ) {
-        context.fill(targetPath, with: .color(fillColor))
-        context.fill(addPath, with: .color(fillColor))
-
-        if let stroke {
-            strokePath(&context, targetPath, stroke)
-            strokePath(&context, addPath, stroke)
-        }
-    }
-
-    /// Intersect: Only show where both shapes overlap
-    private func renderIntersect(
-        context: inout GraphicsContext, size: CGSize,
-        targetPath: Path, maskPath: Path,
-        fillColor: Color, stroke: VectorStrokeStyle?
-    ) {
-        context.drawLayer { layerCtx in
-            // 1. Fill the target
-            layerCtx.fill(targetPath, with: .color(fillColor))
-            // 2. Erase everything OUTSIDE the mask (keep only intersection)
-            layerCtx.blendMode = .destinationIn
-            layerCtx.fill(maskPath, with: .color(.white))
-        }
-
-        if let stroke {
-            // Stroke only the intersection outline
-            strokePath(&context, targetPath, stroke)
-        }
-    }
-
-    /// Difference (XOR): Show non-overlapping areas of both shapes
-    private func renderDifference(
-        context: inout GraphicsContext, size: CGSize,
-        pathA: Path, pathB: Path,
-        fillColor: Color, stroke: VectorStrokeStyle?
-    ) {
-        // Use even-odd fill rule on combined path for XOR effect
-        var combined = pathA
-        combined.addPath(pathB)
-        context.fill(combined, with: .color(fillColor), style: FillStyle(eoFill: true))
-
-        if let stroke {
-            strokePath(&context, pathA, stroke)
-            strokePath(&context, pathB, stroke)
-        }
     }
 
     // MARK: - Stroke Helper
@@ -209,7 +166,37 @@ struct BooleanMaskedElement: View {
         )
     }
 
-    // MARK: - Element Info Helpers
+    // MARK: - Coordinate Space Helpers
+
+    /// Compute the bounding rect of a vector path in the parent's coordinate space.
+    /// In a centered ZStack, element origin = -elementSize/2 + elementOffset
+    private func pathBoundsInParent(path: VectorPath, node: ElementNode) -> CGRect {
+        let size = frameSize(of: node)
+        let off = elementOffset(of: node)
+        let localBounds = path.boundingRect
+
+        // Element's top-left in parent space (centered layout)
+        let originX = -size.width / 2 + off.x
+        let originY = -size.height / 2 + off.y
+
+        return CGRect(
+            x: originX + localBounds.minX,
+            y: originY + localBounds.minY,
+            width: localBounds.width,
+            height: localBounds.height
+        )
+    }
+
+    /// Build a SwiftUI Path with points translated to parent coordinate space.
+    private func buildPathInParent(from vectorPath: VectorPath, node: ElementNode) -> Path {
+        let size = frameSize(of: node)
+        let off = elementOffset(of: node)
+        let originX = -size.width / 2 + off.x
+        let originY = -size.height / 2 + off.y
+        return buildPath(from: vectorPath, offset: CGPoint(x: originX, y: originY))
+    }
+
+    // MARK: - Element Info
 
     private func frameSize(of node: ElementNode) -> CGSize {
         var w: CGFloat = 100
@@ -241,11 +228,9 @@ struct BooleanMaskedElement: View {
                 x: vectorPath.points[0].position.x + offset.x,
                 y: vectorPath.points[0].position.y + offset.y
             ))
-
             for i in 1..<vectorPath.points.count {
                 addSegment(to: &p, from: vectorPath.points[i - 1], to: vectorPath.points[i], offset: offset)
             }
-
             if vectorPath.isClosed && vectorPath.points.count > 1 {
                 addSegment(to: &p, from: vectorPath.points.last!, to: vectorPath.points[0], offset: offset)
                 p.closeSubpath()

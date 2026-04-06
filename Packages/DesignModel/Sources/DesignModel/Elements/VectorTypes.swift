@@ -15,6 +15,43 @@ public struct VectorPath: Codable, Hashable {
         self.isClosed = isClosed
         self.fillRule = fillRule
     }
+
+    /// Bounding rect of all anchor points AND bezier handles (absolute positions).
+    /// Returns `.zero` for empty paths.
+    public var boundingRect: CGRect {
+        guard !points.isEmpty else { return .zero }
+
+        var minX = CGFloat.infinity
+        var minY = CGFloat.infinity
+        var maxX = -CGFloat.infinity
+        var maxY = -CGFloat.infinity
+
+        for point in points {
+            // Anchor
+            minX = min(minX, point.position.x)
+            minY = min(minY, point.position.y)
+            maxX = max(maxX, point.position.x)
+            maxY = max(maxY, point.position.y)
+
+            // Handle In (absolute)
+            if let abs = point.handleInAbsolute {
+                minX = min(minX, abs.x)
+                minY = min(minY, abs.y)
+                maxX = max(maxX, abs.x)
+                maxY = max(maxY, abs.y)
+            }
+
+            // Handle Out (absolute)
+            if let abs = point.handleOutAbsolute {
+                minX = min(minX, abs.x)
+                minY = min(minY, abs.y)
+                maxX = max(maxX, abs.x)
+                maxY = max(maxY, abs.y)
+            }
+        }
+
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
 }
 
 /// A single anchor point in a vector path, with optional bezier control handles.
