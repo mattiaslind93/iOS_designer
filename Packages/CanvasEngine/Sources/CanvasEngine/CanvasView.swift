@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import DesignModel
 import AppKit
 
@@ -57,6 +58,17 @@ public struct CanvasView: View {
             .focused($canvasFocused)
             .focusEffectDisabled()
             .gesture(magnificationGesture)
+            .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                for provider in providers {
+                    _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                        guard let url else { return }
+                        DispatchQueue.main.async {
+                            document.importFile(url: url)
+                        }
+                    }
+                }
+                return true
+            }
             .onAppear {
                 canvasFocused = true
                 setupKeyMonitor()
@@ -181,7 +193,9 @@ public struct CanvasView: View {
                         selectedPointID: $selectedPointID,
                         selectedPointIDs: $selectedPointIDs,
                         isEditingPath: $isEditingPath,
-                        elementOffset: editingElementOffset(in: page)
+                        elementOffset: editingElementOffset(in: page),
+                        snapSettings: snapSettings,
+                        deviceSize: page.deviceFrame.size
                     )
                     .allowsHitTesting(true)
                 }

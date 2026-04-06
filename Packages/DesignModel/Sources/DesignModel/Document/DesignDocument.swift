@@ -1,6 +1,9 @@
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
+#if os(macOS)
+import AppKit
+#endif
 
 /// The root document model. Conforms to ReferenceFileDocument for document-based app support.
 /// Uses JSON serialization for save/load and snapshot-based undo.
@@ -299,6 +302,70 @@ public class DesignDocument: ReferenceFileDocument, ObservableObject {
         // Insert at new position
         _ = pages[pageIndex].rootElement.update(by: parentID) { parent in
             parent.insertChild(removed, at: index)
+        }
+    }
+
+    // MARK: - Import
+
+    /// Import an image file (PNG, JPEG, etc.) as an ImportedImage element.
+    public func importImage(data: Data, fileName: String, originalSize: CGSize) {
+        pushUndo()
+        let imageData = ImportedImageData(
+            fileName: fileName,
+            imageData: data,
+            originalSize: originalSize,
+            contentMode: .fit
+        )
+        var node = ElementNode(
+            name: fileName,
+            payload: .importedImage(data: imageData)
+        )
+        // Set frame to original size (capped to reasonable canvas size)
+        let maxDim: CGFloat = 300
+        let scale = min(1, min(maxDim / originalSize.width, maxDim / originalSize.height))
+        let w = originalSize.width * scale
+        let h = originalSize.height * scale
+        node.modifiers.append(.frame(width: w, height: h, minWidth: nil, maxWidth: nil,
+                                      minHeight: nil, maxHeight: nil, alignment: nil))
+        addElement(node)
+        selectElement(node.id)
+    }
+
+    /// Import SVG file data as vector path elements.
+    public func importSVG(data: Data, fileName: String) {
+        pushUndo()
+        let parser = SVGParser()
+        let elements = parser.parse(data: data, fileName: fileName)
+        for element in elements {
+            addElement(element)
+        }
+        if let first = elements.first {
+            selectElement(first.id)
+        }
+    }
+
+    /// Import a file by URL — auto-detects type (image vs SVG).
+    public func importFile(url: URL) {
+        guard let data = try? Data(contentsOf: url) else { return }
+        let fileName = url.lastPathComponent
+        let ext = url.pathExtension.lowercased()
+
+        if ext == "svg" {
+            importSVG(data: data, fileName: fileName)
+        } else if ["png", "jpg", "jpeg", "heic", "heif", "tiff", "tif", "webp", "gif", "bmp"].contains(ext) {
+            #if os(macOS)
+            if let nsImage = NSImage(data: data) {
+                let size = nsImage.size
+                importImage(data: data, fileName: fileName, originalSize: size)
+            }
+            #endif
+        }
+    }
+
+    /// Import multiple files by URL.
+    public func importFiles(urls: [URL]) {
+        for url in urls {
+            importFile(url: url)
         }
     }
 

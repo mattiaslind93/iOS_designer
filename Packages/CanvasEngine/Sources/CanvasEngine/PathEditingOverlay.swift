@@ -16,12 +16,27 @@ public struct PathEditingOverlay: View {
     /// The element's offset within the phone frame (from .offset modifier)
     let elementOffset: CGPoint
 
+    /// Snap settings from the canvas for grid snapping
+    let snapSettings: SnapSettings
+
+    /// Device size for coordinate mapping
+    let deviceSize: CGSize
+
     // Drag state
     @State private var dragTarget: DragTarget? = nil
     @State private var dragStartPosition: CGPoint = .zero
     @State private var dragStartHandle: CGPoint = .zero
     @State private var isDragging: Bool = false
     @State private var newPointID: UUID? = nil
+
+    /// Captured bounding rect midpoint at drag start — used to keep the
+    /// element from visually translating while points are moved.
+    @State private var dragStartBoundsMid: CGPoint? = nil
+
+    // Box selection state (for marquee-selecting multiple points)
+    @State private var isBoxSelecting: Bool = false
+    @State private var boxSelectStart: CGPoint? = nil
+    @State private var boxSelectEnd: CGPoint? = nil
 
     private let pointSize: CGFloat = 10
     private let handleSize: CGFloat = 8
@@ -32,6 +47,7 @@ public struct PathEditingOverlay: View {
         case handleIn(UUID)
         case handleOut(UUID)
         case newPoint(UUID)
+        case boxSelect
     }
 
     public init(
@@ -40,7 +56,9 @@ public struct PathEditingOverlay: View {
         selectedPointID: Binding<UUID?>,
         selectedPointIDs: Binding<Set<UUID>>,
         isEditingPath: Binding<Bool>,
-        elementOffset: CGPoint
+        elementOffset: CGPoint,
+        snapSettings: SnapSettings,
+        deviceSize: CGSize
     ) {
         self.elementID = elementID
         self.document = document
@@ -48,6 +66,8 @@ public struct PathEditingOverlay: View {
         self._selectedPointIDs = selectedPointIDs
         self._isEditingPath = isEditingPath
         self.elementOffset = elementOffset
+        self.snapSettings = snapSettings
+        self.deviceSize = deviceSize
     }
 
     // MARK: - Data Access
@@ -83,13 +103,7 @@ public struct PathEditingOverlay: View {
         GeometryReader { geo in
             Canvas { context, size in
                 guard let path = vectorPath else { return }
-                let mid = pathBoundsMid
-                // VectorPathView is centered in the ZStack, then moved by elementOffset.
-                // The view's center = path bounds midpoint. So path point (0,0) maps to:
-                // phoneCenter + elementOffset - boundsMid
-                let originX = size.width / 2 + elementOffset.x - mid.x
-                let originY = size.height / 2 + elementOffset.y - mid.y
-                let origin = CGPoint(x: originX, y: originY)
+                let origin = computeOrigin(in: size)
 
                 drawPathOutline(context: context, path: path, origin: origin)
                 drawHandles(context: context, path: path, origin: origin)
@@ -98,8 +112,8 @@ public struct PathEditingOverlay: View {
                 // Draw path bounding rect (dashed)
                 let b = path.boundingRect
                 let boundsRect = CGRect(
-                    x: originX + b.minX,
-                    y: originY + b.minY,
+                    x: origin.x + b.minX,
+                    y: origin.y + b.minY,
                     width: b.width,
                     height: b.height
                 )
@@ -108,15 +122,24 @@ public struct PathEditingOverlay: View {
                     with: .color(.blue.opacity(0.15)),
                     style: StrokeStyle(lineWidth: 1, dash: [4, 4])
                 )
+
+                // Draw box selection rect
+                if isBoxSelecting, let start = boxSelectStart, let end = boxSelectEnd {
+                    let selRect = CGRect(
+                        x: min(start.x, end.x),
+                        y: min(start.y, end.y),
+                        width: abs(end.x - start.x),
+                        height: abs(end.y - start.y)
+                    )
+                    context.fill(Path(selRect), with: .color(.blue.opacity(0.1)))
+                    context.stroke(Path(selRect), with: .color(.blue.opacity(0.6)), lineWidth: 1)
+                }
             }
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        let mid = pathBoundsMid
-                        let originX = geo.size.width / 2 + elementOffset.x - mid.x
-                        let originY = geo.size.height / 2 + elementOffset.y - mid.y
-                        let origin = CGPoint(x: originX, y: originY)
+                        let origin = computeOrigin(in: geo.size)
 
                         // Convert screen coords to element-local coords
                         let localStart = CGPoint(
@@ -129,16 +152,36 @@ public struct PathEditingOverlay: View {
                         )
 
                         if !isDragging {
-                            beginDrag(at: localStart)
+                            beginDrag(at: localStart, screenStart: value.startLocation)
                             isDragging = true
                         }
-                        continueDrag(to: localCurrent, translation: value.translation)
+
+                        if isBoxSelecting {
+                            boxSelectEnd = value.location
+                            // Live update point selection
+                            if let start = boxSelectStart {
+                                let rect = normalizedRect(from: start, to: value.location)
+                                liveBoxSelectPoints(in: rect, origin: origin)
+                            }
+                        } else {
+                            continueDrag(to: localCurrent, translation: value.translation)
+                        }
                     }
                     .onEnded { value in
-                        let mid = pathBoundsMid
-                        let originX = geo.size.width / 2 + elementOffset.x - mid.x
-                        let originY = geo.size.height / 2 + elementOffset.y - mid.y
-                        let origin = CGPoint(x: originX, y: originY)
+                        let origin = computeOrigin(in: geo.size)
+
+                        if isBoxSelecting {
+                            // Finalize box selection
+                            if let start = boxSelectStart {
+                                let rect = normalizedRect(from: start, to: value.location)
+                                liveBoxSelectPoints(in: rect, origin: origin)
+                            }
+                            isBoxSelecting = false
+                            boxSelectStart = nil
+                            boxSelectEnd = nil
+                            endDrag()
+                            return
+                        }
 
                         let dist = hypot(value.translation.width, value.translation.height)
                         if dist < 3 && dragTarget == nil {
@@ -152,6 +195,40 @@ public struct PathEditingOverlay: View {
                     }
             )
         }
+    }
+
+    /// Compute the origin offset for mapping path coordinates to screen coordinates.
+    private func computeOrigin(in size: CGSize) -> CGPoint {
+        let mid = pathBoundsMid
+        let originX = size.width / 2 + elementOffset.x - mid.x
+        let originY = size.height / 2 + elementOffset.y - mid.y
+        return CGPoint(x: originX, y: originY)
+    }
+
+    /// Normalized rect from two points.
+    private func normalizedRect(from a: CGPoint, to b: CGPoint) -> CGRect {
+        CGRect(
+            x: min(a.x, b.x), y: min(a.y, b.y),
+            width: abs(b.x - a.x), height: abs(b.y - a.y)
+        )
+    }
+
+    /// Select all path points whose screen position falls within the given rect.
+    private func liveBoxSelectPoints(in screenRect: CGRect, origin: CGPoint) {
+        guard let path = vectorPath else { return }
+        var newSelection: Set<UUID> = []
+        for point in path.points {
+            let screenPos = CGPoint(x: origin.x + point.position.x, y: origin.y + point.position.y)
+            if screenRect.contains(screenPos) {
+                newSelection.insert(point.id)
+            }
+        }
+        if NSEvent.modifierFlags.contains(.shift) {
+            selectedPointIDs.formUnion(newSelection)
+        } else {
+            selectedPointIDs = newSelection
+        }
+        selectedPointID = selectedPointIDs.first
     }
 
     // MARK: - Drawing
@@ -250,18 +327,35 @@ public struct PathEditingOverlay: View {
 
     // MARK: - Drag Logic
 
-    private func beginDrag(at localPoint: CGPoint) {
+    private func beginDrag(at localPoint: CGPoint, screenStart: CGPoint) {
         guard let target = hitTest(at: localPoint) else {
-            dragTarget = nil
+            // No hit target — start box selection for marquee selecting points
+            dragTarget = .boxSelect
+            isBoxSelecting = true
+            boxSelectStart = screenStart
+            boxSelectEnd = screenStart
             return
         }
 
         dragTarget = target
         guard let path = vectorPath else { return }
 
+        // Capture bounding rect midpoint at drag start for offset compensation
+        let b = path.boundingRect
+        dragStartBoundsMid = CGPoint(x: b.midX, y: b.midY)
+
         switch target {
         case .point(let id):
-            selectedPointID = id
+            // If shift is held, add to selection; otherwise single-select
+            if NSEvent.modifierFlags.contains(.shift) {
+                selectedPointIDs.insert(id)
+                selectedPointID = id
+            } else if !selectedPointIDs.contains(id) {
+                selectedPointID = id
+                selectedPointIDs = [id]
+            } else {
+                selectedPointID = id
+            }
             if let point = path.points.first(where: { $0.id == id }) {
                 dragStartPosition = point.position
             }
@@ -273,7 +367,7 @@ public struct PathEditingOverlay: View {
             if let point = path.points.first(where: { $0.id == id }) {
                 dragStartHandle = point.handleOut ?? .zero
             }
-        case .newPoint:
+        case .newPoint, .boxSelect:
             break
         }
     }
@@ -300,16 +394,45 @@ public struct PathEditingOverlay: View {
 
         switch target {
         case .point(let id):
-            let newPos = CGPoint(
+            var newPos = CGPoint(
                 x: dragStartPosition.x + translation.width,
                 y: dragStartPosition.y + translation.height
             )
+            // Apply snapping to vector point positions
+            if snapSettings.isEnabled {
+                newPos = snapSettings.snap(newPos)
+            }
+
+            // Capture the element's current offset BEFORE the update
+            var currentOffsetX: CGFloat = 0
+            var currentOffsetY: CGFloat = 0
+            if let element = findElement() {
+                for mod in element.modifiers {
+                    if case .offset(let x, let y) = mod { currentOffsetX = x; currentOffsetY = y }
+                }
+            }
+
+            // Get the old bounding rect mid before update
+            let oldMid = vectorPath.map { CGPoint(x: $0.boundingRect.midX, y: $0.boundingRect.midY) }
+
             document.updateElement(elementID) { node in
                 if case .vectorPath(var path, let stroke, let fill) = node.payload {
                     if let idx = path.points.firstIndex(where: { $0.id == id }) {
                         path.points[idx].position = newPos
                     }
                     node.payload = .vectorPath(path: path, stroke: stroke, fill: fill)
+
+                    // Compensate element offset for bounding rect shift
+                    let newBounds = path.boundingRect
+                    let newMid = CGPoint(x: newBounds.midX, y: newBounds.midY)
+                    if let oldMid = oldMid {
+                        let dx = newMid.x - oldMid.x
+                        let dy = newMid.y - oldMid.y
+                        if abs(dx) > 0.01 || abs(dy) > 0.01 {
+                            node.modifiers.removeAll { if case .offset = $0 { return true }; return false }
+                            node.modifiers.append(.offset(x: currentOffsetX + dx, y: currentOffsetY + dy))
+                        }
+                    }
                 }
             }
 
@@ -349,6 +472,9 @@ public struct PathEditingOverlay: View {
 
         case .newPoint(let id):
             updateNewPointHandles(id: id, translation: translation)
+
+        case .boxSelect:
+            break // Handled in body gesture
         }
     }
 
@@ -356,6 +482,10 @@ public struct PathEditingOverlay: View {
         dragTarget = nil
         isDragging = false
         newPointID = nil
+        dragStartBoundsMid = nil
+        isBoxSelecting = false
+        boxSelectStart = nil
+        boxSelectEnd = nil
     }
 
     // MARK: - Tap
@@ -363,7 +493,21 @@ public struct PathEditingOverlay: View {
     private func handleTap(at localPoint: CGPoint) {
         if let target = hitTest(at: localPoint) {
             if case .point(let id) = target {
-                selectedPointID = id
+                if NSEvent.modifierFlags.contains(.shift) {
+                    // Shift+click: toggle point in multi-selection
+                    if selectedPointIDs.contains(id) {
+                        selectedPointIDs.remove(id)
+                        if selectedPointID == id {
+                            selectedPointID = selectedPointIDs.first
+                        }
+                    } else {
+                        selectedPointIDs.insert(id)
+                        selectedPointID = id
+                    }
+                } else {
+                    selectedPointID = id
+                    selectedPointIDs = [id]
+                }
                 return
             }
         }

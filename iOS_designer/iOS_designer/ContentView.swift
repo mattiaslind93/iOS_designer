@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 import DesignModel
 import CanvasEngine
 import ComponentLibrary
@@ -21,6 +22,7 @@ import CodeExport
 struct ContentView: View {
     @ObservedObject var document: DesignDocument
     @State private var showExportSheet = false
+    @State private var showImportPanel = false
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
     @State private var isRunningSimulator = false
     @State private var simulatorError: String?
@@ -83,6 +85,26 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Import
+
+    private func importFiles() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [
+            .svg, .png, .jpeg, .heic, .tiff, .gif, .bmp, .webP
+        ]
+        panel.prompt = "Import"
+        panel.message = "Select images or SVG files to import"
+
+        panel.begin { response in
+            if response == .OK {
+                document.importFiles(urls: panel.urls)
+            }
+        }
+    }
+
     // MARK: - Sidebar
 
     private var sidebar: some View {
@@ -125,6 +147,17 @@ struct ContentView: View {
                 .toggleStyle(.button)
                 .help("Toggle Dark Mode Preview")
             }
+
+            Divider().frame(height: 20)
+
+            // Import button
+            Button {
+                importFiles()
+            } label: {
+                Label("Import", systemImage: "square.and.arrow.down")
+            }
+            .keyboardShortcut("i", modifiers: .command)
+            .help("Import images or SVG files (⌘I)")
 
             Divider().frame(height: 20)
 
