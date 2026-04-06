@@ -21,49 +21,82 @@ public struct PhoneFrameView: View {
     }
 
     public var body: some View {
+        let w = deviceFrame.size.width
+        let h = deviceFrame.size.height
+        let cr = deviceFrame.screenCornerRadius
+
         ZStack {
-            // Device outer bezel
-            RoundedRectangle(cornerRadius: deviceFrame.screenCornerRadius + 4)
+            // 1. Device outer bezel — behind everything
+            RoundedRectangle(cornerRadius: cr + 4)
                 .fill(Color.black)
-                .frame(
-                    width: deviceFrame.size.width + 8,
-                    height: deviceFrame.size.height + 8
-                )
+                .frame(width: w + 8, height: h + 8)
                 .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
 
-            // Screen area
-            ZStack {
-                // Background
-                Rectangle()
-                    .fill(isDarkMode ? Color.black : Color.white)
+            // 2. Screen background — clipped to phone shape (visual only)
+            Rectangle()
+                .fill(isDarkMode ? Color.black : Color.white)
+                .frame(width: w, height: h)
+                .clipShape(RoundedRectangle(cornerRadius: cr))
+                .allowsHitTesting(false)
 
-                // Content (elements) — this is the interactive layer
-                content
-                    .colorScheme(isDarkMode ? .dark : .light)
+            // 3. Interactive content — NO clipShape so gestures work everywhere.
+            //    Uses the phone-sized frame for layout but overflow is allowed.
+            content
+                .colorScheme(isDarkMode ? .dark : .light)
+                .frame(width: w, height: h)
 
-                // All overlays below are NON-INTERACTIVE so they never block
-                // element selection or dragging, even near edges.
+            // 4. Visual overlays — clipped to phone shape, pass-through for gestures
+            overlayLayer
+                .frame(width: w, height: h)
+                .clipShape(RoundedRectangle(cornerRadius: cr))
+                .allowsHitTesting(false)
 
-                // Safe area overlay
-                if showSafeAreas {
-                    safeAreaOverlay
-                        .allowsHitTesting(false)
-                }
-
-                // Dynamic Island
-                if deviceFrame.hasDynamicIsland {
-                    dynamicIsland
-                        .allowsHitTesting(false)
-                }
-
-                // Home indicator
-                homeIndicator
-                    .allowsHitTesting(false)
-            }
-            .frame(width: deviceFrame.size.width, height: deviceFrame.size.height)
-            .clipShape(RoundedRectangle(cornerRadius: deviceFrame.screenCornerRadius))
+            // 5. Bezel border ON TOP — hides any content overflow at rounded corners
+            //    and completes the phone frame look. Non-interactive.
+            bezelBorder
+                .allowsHitTesting(false)
         }
     }
+
+    // MARK: - Overlay layer (safe areas, dynamic island, home indicator)
+
+    private var overlayLayer: some View {
+        ZStack {
+            if showSafeAreas {
+                safeAreaOverlay
+            }
+            if deviceFrame.hasDynamicIsland {
+                dynamicIsland
+            }
+            homeIndicator
+        }
+    }
+
+    // MARK: - Bezel border that covers content overflow at corners
+
+    private var bezelBorder: some View {
+        let w = deviceFrame.size.width
+        let h = deviceFrame.size.height
+        let cr = deviceFrame.screenCornerRadius
+
+        // A rectangle with a rounded-rect hole punched out — covers the corners
+        return Rectangle()
+            .fill(Color.black)
+            .frame(width: w + 8, height: h + 8)
+            .mask(
+                ZStack {
+                    // Full rect
+                    Rectangle()
+                    // Punch out the screen area
+                    RoundedRectangle(cornerRadius: cr)
+                        .frame(width: w, height: h)
+                        .blendMode(.destinationOut)
+                }
+                .compositingGroup()
+            )
+    }
+
+    // MARK: - Sub-views
 
     private var dynamicIsland: some View {
         VStack {
@@ -87,15 +120,12 @@ public struct PhoneFrameView: View {
 
     private var safeAreaOverlay: some View {
         ZStack {
-            // Top safe area
             VStack {
                 Rectangle()
                     .fill(Color.gray.opacity(0.06))
                     .frame(height: deviceFrame.safeAreaInsets.top)
                 Spacer()
             }
-
-            // Bottom safe area
             VStack {
                 Spacer()
                 Rectangle()
