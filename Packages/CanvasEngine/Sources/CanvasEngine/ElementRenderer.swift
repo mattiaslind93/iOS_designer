@@ -96,17 +96,8 @@ public struct ElementRenderer: View {
                             SelectionOverlay()
                         }
                     }
-                    .overlay {
-                        if isThisEditing, let doc = document {
-                            PathEditingOverlay(
-                                elementID: node.id,
-                                document: doc,
-                                selectedPointID: $selectedPointID,
-                                isEditingPath: $isEditingPath,
-                                frameSize: elementFrameSize
-                            )
-                        }
-                    }
+                    // PathEditingOverlay is rendered at the phone frame level (CanvasView)
+                    // so handles outside the element bounds are visible and interactive.
                     // Apply stored offset + live drag offset together so overlay follows
                     .offset(CGSize(
                         width: storedOffset.width + dragOffset.width,

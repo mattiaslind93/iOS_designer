@@ -2,36 +2,29 @@ import SwiftUI
 import DesignModel
 
 /// Overlay shown when editing a vector path.
-/// Uses a single gesture on the whole area with manual hit-testing to determine
-/// which point or handle the user is interacting with.
+/// Rendered at the phone frame level (not as element overlay) so handles
+/// extending outside the element bounds are visible and interactive.
 ///
-/// Interactions:
-/// - Click point → select it
-/// - Drag point → move it
-/// - Drag handle → adjust bezier curve (mirrors by default, Option breaks symmetry)
-/// - Click empty area (open path) → add corner point
-/// - Click+drag empty area → add point with bezier handles
-/// - Click near segment (closed path) → insert point on segment
-/// - Delete key → remove selected point
+/// Uses a single gesture on the whole area with manual hit-testing.
 public struct PathEditingOverlay: View {
     let elementID: UUID
     @ObservedObject var document: DesignDocument
     @Binding var selectedPointID: UUID?
     @Binding var isEditingPath: Bool
-    let frameSize: CGSize
 
-    // What we're currently dragging
+    /// The element's offset within the phone frame (from .offset modifier)
+    let elementOffset: CGPoint
+
+    // Drag state
     @State private var dragTarget: DragTarget? = nil
-    @State private var dragStartPosition: CGPoint = .zero  // original position before drag
-    @State private var dragStartHandle: CGPoint = .zero     // original handle offset before drag
+    @State private var dragStartPosition: CGPoint = .zero
+    @State private var dragStartHandle: CGPoint = .zero
     @State private var isDragging: Bool = false
-
-    // For creating new points via drag
     @State private var newPointID: UUID? = nil
 
     private let pointSize: CGFloat = 10
     private let handleSize: CGFloat = 8
-    private let hitRadius: CGFloat = 12
+    private let hitRadius: CGFloat = 14
 
     private enum DragTarget: Equatable {
         case point(UUID)
@@ -45,13 +38,13 @@ public struct PathEditingOverlay: View {
         document: DesignDocument,
         selectedPointID: Binding<UUID?>,
         isEditingPath: Binding<Bool>,
-        frameSize: CGSize
+        elementOffset: CGPoint
     ) {
         self.elementID = elementID
         self.document = document
         self._selectedPointID = selectedPointID
         self._isEditingPath = isEditingPath
-        self.frameSize = frameSize
+        self.elementOffset = elementOffset
     }
 
     // MARK: - Data Access
@@ -64,6 +57,28 @@ public struct PathEditingOverlay: View {
         return nil
     }
 
+    /// Element's frame size from modifiers
+    private var elementFrameSize: CGSize {
+        guard let element = findElement() else { return CGSize(width: 100, height: 100) }
+        var w: CGFloat = 100
+        var h: CGFloat = 100
+        for mod in element.modifiers {
+            if case .frame(let fw, let fh, _, _, _, _, _) = mod {
+                if let fw { w = fw }
+                if let fh { h = fh }
+            }
+        }
+        return CGSize(width: w, height: h)
+    }
+
+    /// Convert a point from element-local coords to phone-frame coords.
+    /// Element-local (0,0) maps to the element's top-left corner in the frame.
+    /// Since the element is positioned by its parent layout + offset modifier,
+    /// and we don't know the exact layout position, we use the element offset
+    /// plus the element's center offset from the phone frame center.
+    ///
+    /// However, for simplicity and reliability, we render the overlay in the
+    /// element's own coordinate space by applying the same offset.
     private func findElement() -> ElementNode? {
         guard let pageID = document.selectedPageID,
               let page = document.pages.first(where: { $0.id == pageID }) else { return nil }
@@ -73,62 +88,96 @@ public struct PathEditingOverlay: View {
     // MARK: - Body
 
     public var body: some View {
-        Canvas { context, size in
-            guard let path = vectorPath else { return }
-            drawPathOutline(context: context, path: path, size: size)
-            drawHandles(context: context, path: path)
-            drawPoints(context: context, path: path)
+        // Fill the entire phone frame. We offset the Canvas content by the
+        // element's position so points line up with the rendered element.
+        GeometryReader { geo in
+            Canvas { context, size in
+                guard let path = vectorPath else { return }
+                let fs = elementFrameSize
+                // The element is centered in its layout slot, then offset.
+                // In a ZStack root the element is centered, so its local origin
+                // (0,0) maps to: frameCenter + offset - elementSize/2
+                let originX = size.width / 2 + elementOffset.x - fs.width / 2
+                let originY = size.height / 2 + elementOffset.y - fs.height / 2
+                let origin = CGPoint(x: originX, y: originY)
+
+                drawPathOutline(context: context, path: path, origin: origin)
+                drawHandles(context: context, path: path, origin: origin)
+                drawPoints(context: context, path: path, origin: origin)
+
+                // Draw element bounds (dashed rect)
+                let boundsRect = CGRect(x: originX, y: originY, width: fs.width, height: fs.height)
+                context.stroke(
+                    Path(boundsRect),
+                    with: .color(.blue.opacity(0.15)),
+                    style: StrokeStyle(lineWidth: 1, dash: [4, 4])
+                )
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let fs = elementFrameSize
+                        let originX = geo.size.width / 2 + elementOffset.x - fs.width / 2
+                        let originY = geo.size.height / 2 + elementOffset.y - fs.height / 2
+                        let origin = CGPoint(x: originX, y: originY)
+
+                        // Convert screen coords to element-local coords
+                        let localStart = CGPoint(
+                            x: value.startLocation.x - origin.x,
+                            y: value.startLocation.y - origin.y
+                        )
+                        let localCurrent = CGPoint(
+                            x: value.location.x - origin.x,
+                            y: value.location.y - origin.y
+                        )
+
+                        if !isDragging {
+                            beginDrag(at: localStart)
+                            isDragging = true
+                        }
+                        continueDrag(to: localCurrent, translation: value.translation)
+                    }
+                    .onEnded { value in
+                        let fs = elementFrameSize
+                        let originX = geo.size.width / 2 + elementOffset.x - fs.width / 2
+                        let originY = geo.size.height / 2 + elementOffset.y - fs.height / 2
+                        let origin = CGPoint(x: originX, y: originY)
+
+                        let dist = hypot(value.translation.width, value.translation.height)
+                        if dist < 3 && dragTarget == nil {
+                            let localPos = CGPoint(
+                                x: value.startLocation.x - origin.x,
+                                y: value.startLocation.y - origin.y
+                            )
+                            handleTap(at: localPos)
+                        }
+                        endDrag()
+                    }
+            )
         }
-        .frame(width: frameSize.width, height: frameSize.height)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                    if !isDragging {
-                        // First movement — determine what we hit
-                        beginDrag(at: value.startLocation)
-                        isDragging = true
-                    }
-                    continueDrag(to: value.location, translation: value.translation)
-                }
-                .onEnded { value in
-                    let dist = hypot(value.translation.width, value.translation.height)
-                    if dist < 3 && dragTarget == nil {
-                        // Tap on empty area
-                        handleTap(at: value.startLocation)
-                    }
-                    endDrag()
-                }
-        )
     }
 
     // MARK: - Drawing
 
-    private func drawPathOutline(context: GraphicsContext, path vectorPath: VectorPath, size: CGSize) {
-        let swiftPath = buildSwiftUIPath(from: vectorPath)
+    private func drawPathOutline(context: GraphicsContext, path vectorPath: VectorPath, origin: CGPoint) {
+        let swiftPath = buildSwiftUIPath(from: vectorPath, origin: origin)
         context.stroke(swiftPath, with: .color(.blue.opacity(0.3)), lineWidth: 1.5)
     }
 
-    private func drawPoints(context: GraphicsContext, path: VectorPath) {
+    private func drawPoints(context: GraphicsContext, path: VectorPath, origin: CGPoint) {
         for point in path.points {
             let isSelected = point.id == selectedPointID
-            let pos = point.position
-            let size = pointSize
+            let screenPos = CGPoint(x: origin.x + point.position.x, y: origin.y + point.position.y)
+            let s = pointSize
 
-            let rect = CGRect(
-                x: pos.x - size / 2,
-                y: pos.y - size / 2,
-                width: size,
-                height: size
-            )
+            let rect = CGRect(x: screenPos.x - s/2, y: screenPos.y - s/2, width: s, height: s)
 
             if point.isCurve {
-                // Circle for curve points
                 let circle = Path(ellipseIn: rect)
                 context.fill(circle, with: .color(isSelected ? .blue : .white))
                 context.stroke(circle, with: .color(.blue), lineWidth: 1.5)
             } else {
-                // Square for corner points
                 let square = Path(rect)
                 context.fill(square, with: .color(isSelected ? .blue : .white))
                 context.stroke(square, with: .color(.blue), lineWidth: 1.5)
@@ -136,75 +185,62 @@ public struct PathEditingOverlay: View {
         }
     }
 
-    private func drawHandles(context: GraphicsContext, path: VectorPath) {
+    private func drawHandles(context: GraphicsContext, path: VectorPath, origin: CGPoint) {
         for point in path.points {
             guard point.id == selectedPointID else { continue }
-            let pos = point.position
+            let screenPos = CGPoint(x: origin.x + point.position.x, y: origin.y + point.position.y)
 
-            // Handle In
             if let absIn = point.handleInAbsolute {
-                // Line from point to handle
+                let screenIn = CGPoint(x: origin.x + absIn.x, y: origin.y + absIn.y)
                 var line = Path()
-                line.move(to: pos)
-                line.addLine(to: absIn)
+                line.move(to: screenPos)
+                line.addLine(to: screenIn)
                 context.stroke(line, with: .color(.blue.opacity(0.5)), lineWidth: 1)
 
-                // Handle dot
-                let handleRect = CGRect(
-                    x: absIn.x - handleSize / 2,
-                    y: absIn.y - handleSize / 2,
-                    width: handleSize,
-                    height: handleSize
-                )
-                let dot = Path(ellipseIn: handleRect)
+                let r = CGRect(x: screenIn.x - handleSize/2, y: screenIn.y - handleSize/2, width: handleSize, height: handleSize)
+                let dot = Path(ellipseIn: r)
                 context.fill(dot, with: .color(.orange))
                 context.stroke(dot, with: .color(.white), lineWidth: 1)
             }
 
-            // Handle Out
             if let absOut = point.handleOutAbsolute {
+                let screenOut = CGPoint(x: origin.x + absOut.x, y: origin.y + absOut.y)
                 var line = Path()
-                line.move(to: pos)
-                line.addLine(to: absOut)
+                line.move(to: screenPos)
+                line.addLine(to: screenOut)
                 context.stroke(line, with: .color(.blue.opacity(0.5)), lineWidth: 1)
 
-                let handleRect = CGRect(
-                    x: absOut.x - handleSize / 2,
-                    y: absOut.y - handleSize / 2,
-                    width: handleSize,
-                    height: handleSize
-                )
-                let dot = Path(ellipseIn: handleRect)
+                let r = CGRect(x: screenOut.x - handleSize/2, y: screenOut.y - handleSize/2, width: handleSize, height: handleSize)
+                let dot = Path(ellipseIn: r)
                 context.fill(dot, with: .color(.orange))
                 context.stroke(dot, with: .color(.white), lineWidth: 1)
             }
         }
     }
 
-    // MARK: - Hit Testing
+    // MARK: - Hit Testing (in element-local coordinates)
 
-    /// Find what the user tapped/clicked on
-    private func hitTest(at location: CGPoint) -> DragTarget? {
+    private func hitTest(at localPoint: CGPoint) -> DragTarget? {
         guard let path = vectorPath else { return nil }
 
-        // First check handles of selected point (highest priority, they're on top)
+        // Check handles of selected point first (highest priority)
         if let selectedID = selectedPointID,
            let selectedPoint = path.points.first(where: { $0.id == selectedID }) {
             if let absOut = selectedPoint.handleOutAbsolute {
-                if distance(location, absOut) < hitRadius {
+                if distance(localPoint, absOut) < hitRadius {
                     return .handleOut(selectedID)
                 }
             }
             if let absIn = selectedPoint.handleInAbsolute {
-                if distance(location, absIn) < hitRadius {
+                if distance(localPoint, absIn) < hitRadius {
                     return .handleIn(selectedID)
                 }
             }
         }
 
-        // Then check all anchor points
-        for point in path.points.reversed() { // reversed so topmost (last drawn) is checked first
-            if distance(location, point.position) < hitRadius {
+        // Check anchor points (reversed for z-order)
+        for point in path.points.reversed() {
+            if distance(localPoint, point.position) < hitRadius {
                 return .point(point.id)
             }
         }
@@ -218,9 +254,8 @@ public struct PathEditingOverlay: View {
 
     // MARK: - Drag Logic
 
-    private func beginDrag(at location: CGPoint) {
-        guard let target = hitTest(at: location) else {
-            // Hit nothing — might be creating a new point (handled in continueDrag/endDrag)
+    private func beginDrag(at localPoint: CGPoint) {
+        guard let target = hitTest(at: localPoint) else {
             dragTarget = nil
             return
         }
@@ -247,15 +282,16 @@ public struct PathEditingOverlay: View {
         }
     }
 
-    private func continueDrag(to location: CGPoint, translation: CGSize) {
+    private func continueDrag(to localPoint: CGPoint, translation: CGSize) {
         guard let target = dragTarget else {
-            // No target — if dragging far enough on empty area, create bezier point
+            // No target — create new bezier point if dragging far enough
             let dist = hypot(translation.width, translation.height)
             if dist > 5 && newPointID == nil {
-                startNewBezierPoint(at: CGPoint(
-                    x: location.x - translation.width,
-                    y: location.y - translation.height
-                ))
+                let startLocal = CGPoint(
+                    x: localPoint.x - translation.width,
+                    y: localPoint.y - translation.height
+                )
+                startNewBezierPoint(at: startLocal)
                 if let id = newPointID {
                     dragTarget = .newPoint(id)
                 }
@@ -268,7 +304,6 @@ public struct PathEditingOverlay: View {
 
         switch target {
         case .point(let id):
-            // Move point: set absolute position = startPosition + translation
             let newPos = CGPoint(
                 x: dragStartPosition.x + translation.width,
                 y: dragStartPosition.y + translation.height
@@ -291,7 +326,6 @@ public struct PathEditingOverlay: View {
                 if case .vectorPath(var path, let stroke, let fill) = node.payload {
                     if let idx = path.points.firstIndex(where: { $0.id == id }) {
                         path.points[idx].handleIn = newHandle
-                        // Mirror to handleOut for smooth curves (unless Option held)
                         if !NSEvent.modifierFlags.contains(.option) {
                             path.points[idx].handleOut = CGPoint(x: -newHandle.x, y: -newHandle.y)
                         }
@@ -328,11 +362,10 @@ public struct PathEditingOverlay: View {
         newPointID = nil
     }
 
-    // MARK: - Tap on Empty Area
+    // MARK: - Tap
 
-    private func handleTap(at location: CGPoint) {
-        // Check if we tapped a point first
-        if let target = hitTest(at: location) {
+    private func handleTap(at localPoint: CGPoint) {
+        if let target = hitTest(at: localPoint) {
             if case .point(let id) = target {
                 selectedPointID = id
                 return
@@ -342,8 +375,7 @@ public struct PathEditingOverlay: View {
         guard let path = vectorPath else { return }
 
         if !path.isClosed || path.points.isEmpty {
-            // Open path: add corner point
-            let newPoint = PathPoint(position: location)
+            let newPoint = PathPoint(position: localPoint)
             document.updateElement(elementID) { node in
                 if case .vectorPath(var p, let stroke, let fill) = node.payload {
                     p.points.append(newPoint)
@@ -352,25 +384,19 @@ public struct PathEditingOverlay: View {
             }
             selectedPointID = newPoint.id
         } else {
-            // Closed path: insert on nearest segment
-            insertPointOnNearestSegment(at: location)
+            insertPointOnNearestSegment(at: localPoint)
         }
     }
 
-    // MARK: - New Bezier Point (drag to set handles)
+    // MARK: - New Bezier Point
 
-    private func startNewBezierPoint(at location: CGPoint) {
+    private func startNewBezierPoint(at localPoint: CGPoint) {
         guard let path = vectorPath else { return }
         guard !path.isClosed || path.points.isEmpty else { return }
 
         let id = UUID()
         newPointID = id
-        let newPoint = PathPoint(
-            id: id,
-            position: location,
-            handleIn: .zero,
-            handleOut: .zero
-        )
+        let newPoint = PathPoint(id: id, position: localPoint, handleIn: .zero, handleOut: .zero)
         document.updateElement(elementID) { node in
             if case .vectorPath(var p, let stroke, let fill) = node.payload {
                 p.points.append(newPoint)
@@ -384,10 +410,8 @@ public struct PathEditingOverlay: View {
         document.updateElement(elementID) { node in
             if case .vectorPath(var path, let stroke, let fill) = node.payload {
                 if let idx = path.points.firstIndex(where: { $0.id == id }) {
-                    let handleOut = CGPoint(x: translation.width, y: translation.height)
-                    let handleIn = CGPoint(x: -translation.width, y: -translation.height)
-                    path.points[idx].handleOut = handleOut
-                    path.points[idx].handleIn = handleIn
+                    path.points[idx].handleOut = CGPoint(x: translation.width, y: translation.height)
+                    path.points[idx].handleIn = CGPoint(x: -translation.width, y: -translation.height)
                     node.payload = .vectorPath(path: path, stroke: stroke, fill: fill)
                 }
             }
@@ -450,40 +474,46 @@ public struct PathEditingOverlay: View {
         return (hypot(point.x - proj.x, point.y - proj.y), t)
     }
 
-    // MARK: - Build SwiftUI Path (for outline drawing)
+    // MARK: - Path Building
 
-    private func buildSwiftUIPath(from vectorPath: VectorPath) -> Path {
+    private func buildSwiftUIPath(from vectorPath: VectorPath, origin: CGPoint) -> Path {
         Path { p in
             guard !vectorPath.points.isEmpty else { return }
-            p.move(to: vectorPath.points[0].position)
+            p.move(to: CGPoint(
+                x: origin.x + vectorPath.points[0].position.x,
+                y: origin.y + vectorPath.points[0].position.y
+            ))
 
             for i in 1..<vectorPath.points.count {
                 let prev = vectorPath.points[i - 1]
                 let curr = vectorPath.points[i]
-                addSegment(to: &p, from: prev, to: curr)
+                addSegment(to: &p, from: prev, to: curr, origin: origin)
             }
 
             if vectorPath.isClosed && vectorPath.points.count > 1 {
-                let last = vectorPath.points[vectorPath.points.count - 1]
-                let first = vectorPath.points[0]
-                addSegment(to: &p, from: last, to: first)
+                addSegment(to: &p, from: vectorPath.points.last!, to: vectorPath.points[0], origin: origin)
                 p.closeSubpath()
             }
         }
     }
 
-    private func addSegment(to p: inout Path, from prev: PathPoint, to curr: PathPoint) {
+    private func addSegment(to p: inout Path, from prev: PathPoint, to curr: PathPoint, origin: CGPoint) {
+        let currPos = CGPoint(x: origin.x + curr.position.x, y: origin.y + curr.position.y)
         let hasOut = prev.handleOut != nil
         let hasIn = curr.handleIn != nil
 
         if hasOut && hasIn {
-            p.addCurve(to: curr.position, control1: prev.handleOutAbsolute!, control2: curr.handleInAbsolute!)
+            let c1 = CGPoint(x: origin.x + prev.handleOutAbsolute!.x, y: origin.y + prev.handleOutAbsolute!.y)
+            let c2 = CGPoint(x: origin.x + curr.handleInAbsolute!.x, y: origin.y + curr.handleInAbsolute!.y)
+            p.addCurve(to: currPos, control1: c1, control2: c2)
         } else if hasOut {
-            p.addQuadCurve(to: curr.position, control: prev.handleOutAbsolute!)
+            let c = CGPoint(x: origin.x + prev.handleOutAbsolute!.x, y: origin.y + prev.handleOutAbsolute!.y)
+            p.addQuadCurve(to: currPos, control: c)
         } else if hasIn {
-            p.addQuadCurve(to: curr.position, control: curr.handleInAbsolute!)
+            let c = CGPoint(x: origin.x + curr.handleInAbsolute!.x, y: origin.y + curr.handleInAbsolute!.y)
+            p.addQuadCurve(to: currPos, control: c)
         } else {
-            p.addLine(to: curr.position)
+            p.addLine(to: currPos)
         }
     }
 }

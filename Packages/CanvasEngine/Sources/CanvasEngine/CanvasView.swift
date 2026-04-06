@@ -152,6 +152,20 @@ public struct CanvasView: View {
                         }
                     }
                 )
+
+                // Path editing overlay — rendered on top of everything in the
+                // phone frame so handles outside the element bounds are visible
+                // and interactive.
+                if isEditingPath, let elementID = document.selectedElementID {
+                    PathEditingOverlay(
+                        elementID: elementID,
+                        document: document,
+                        selectedPointID: $selectedPointID,
+                        isEditingPath: $isEditingPath,
+                        elementOffset: editingElementOffset(in: page)
+                    )
+                    .allowsHitTesting(true)
+                }
             }
         }
         .gesture(panGesture)
@@ -226,6 +240,23 @@ public struct CanvasView: View {
         .padding(8)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
         .padding()
+    }
+
+    // MARK: - Editing Element Helpers
+
+    /// Get the offset of the currently-edited element so the overlay
+    /// can position points correctly within the phone frame coordinate space.
+    private func editingElementOffset(in page: DesignPage) -> CGPoint {
+        guard let elementID = document.selectedElementID,
+              let element = page.rootElement.find(by: elementID) else {
+            return .zero
+        }
+        for mod in element.modifiers {
+            if case .offset(let x, let y) = mod {
+                return CGPoint(x: x, y: y)
+            }
+        }
+        return .zero
     }
 
     // MARK: - Key Monitor (NSEvent)
