@@ -102,10 +102,13 @@ public struct ElementRenderer: View {
                 renderPayload()
                     .applyModifiers(node.modifiers.filter { mod in
                         if case .offset = mod { return false }
-                        // For vector paths, skip .frame — VectorPathView sizes itself dynamically
-                        if isVectorPath, case .frame = mod { return false }
-                        // For vector paths, skip glass modifiers — applied separately with vector shape
-                        if isVectorPath, Self.isGlassModifier(mod) { return false }
+                        // For vector paths, skip modifiers that VectorPathView handles internally
+                        if isVectorPath {
+                            if case .frame = mod { return false }           // sizes itself dynamically
+                            if case .foregroundStyle = mod { return false }  // uses its own fill/stroke colors
+                            if case .background = mod { return false }       // no background on vector canvas
+                            if Self.isGlassModifier(mod) { return false }   // applied separately with vector shape
+                        }
                         return true
                     })
                     // For vector paths, apply glass effects using the actual vector shape
