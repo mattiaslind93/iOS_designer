@@ -50,6 +50,11 @@ public struct ElementRenderer: View {
         return false
     }
 
+    /// Whether this node has a gradient fill (used to skip solid foreground color)
+    private var hasGradientFill: Bool {
+        node.modifiers.contains { if case .gradientFill = $0 { return true } else { return false } }
+    }
+
     /// Extract the VectorPath data if this is a vector path element
     private var vectorPathData: VectorPath? {
         if case .vectorPath(let path, _, _) = node.payload { return path }
@@ -102,9 +107,16 @@ public struct ElementRenderer: View {
                     .id(node.id)
             } else {
                 let isThisEditing = isEditingPath && selectedID == node.id && isVectorPath
+                let hasGradient = hasGradientFill
                 renderPayload()
                     .applyModifiers(node.modifiers.filter { mod in
                         if case .offset = mod { return false }
+                        // When gradient fill is active, skip solid color modifiers
+                        // so the gradient (with potential opacity) shows through
+                        if hasGradient {
+                            if case .foregroundStyle = mod { return false }
+                            if case .background = mod { return false }
+                        }
                         // For vector paths, skip modifiers that VectorPathView handles internally
                         if isVectorPath {
                             if case .frame = mod { return false }           // sizes itself dynamically
@@ -800,7 +812,9 @@ extension View {
             self.opacity(opacity)
 
         case .gradientFill(let gradient):
-            self.overlay(GradientFillView(gradient: gradient))
+            // Use foregroundStyle for shape-like elements so opacity works correctly
+            // (no solid color underneath to block transparency)
+            self.applyGradientFill(gradient)
 
         case .font(let style, let size, let weight, let design):
             self.font(Self.buildFont(style: style, size: size, weight: weight, design: design))
@@ -937,63 +951,53 @@ extension View {
     }
 }
 
-// MARK: - Gradient Fill View
+// MARK: - Gradient Fill
 
-/// Renders a GradientFill as a SwiftUI gradient overlay.
-struct GradientFillView: View {
-    let gradient: GradientFill
-
-    var body: some View {
-        GeometryReader { geo in
-            let swiftGradient = buildGradient()
-            switch gradient.type {
-            case .linear:
-                LinearGradient(
-                    gradient: swiftGradient,
-                    startPoint: linearStart,
-                    endPoint: linearEnd
-                )
-            case .radial:
-                RadialGradient(
-                    gradient: swiftGradient,
-                    center: UnitPoint(x: gradient.centerX, y: gradient.centerY),
-                    startRadius: gradient.startRadius * min(geo.size.width, geo.size.height),
-                    endRadius: gradient.endRadius * max(geo.size.width, geo.size.height)
-                )
-            case .angular:
-                AngularGradient(
-                    gradient: swiftGradient,
-                    center: UnitPoint(x: gradient.centerX, y: gradient.centerY),
-                    angle: .degrees(gradient.angle)
-                )
-            }
-        }
-    }
-
-    private func buildGradient() -> Gradient {
+extension View {
+    /// Apply a gradient as foregroundStyle so transparency works correctly.
+    /// The solid foreground/background colors should be filtered out when this is used.
+    @ViewBuilder
+    func applyGradientFill(_ gradient: GradientFill) -> some View {
         let stops = gradient.stops.sorted { $0.location < $1.location }
-        return Gradient(stops: stops.map { stop in
+        let swiftStops = stops.map { stop in
             Gradient.Stop(
                 color: stop.color.swiftUIColor.opacity(stop.opacity),
                 location: stop.location
             )
-        })
-    }
+        }
+        let grad = Gradient(stops: swiftStops)
 
-    /// Convert angle (degrees) to start/end UnitPoints for LinearGradient.
-    private var linearStart: UnitPoint {
-        let rad = (gradient.angle - 90) * .pi / 180
-        return UnitPoint(
-            x: 0.5 - cos(rad) * 0.5,
-            y: 0.5 - sin(rad) * 0.5
-        )
-    }
-
-    private var linearEnd: UnitPoint {
-        let rad = (gradient.angle - 90) * .pi / 180
-        return UnitPoint(
-            x: 0.5 + cos(rad) * 0.5,
-            y: 0.5 + sin(rad) * 0.5
-        )
+        switch gradient.type {
+        case .linear:
+            let angleRad = (gradient.angle - 90) * .pi / 180
+            let start = UnitPoint(
+                x: 0.5 - cos(angleRad) * 0.5,
+                y: 0.5 - sin(angleRad) * 0.5
+            )
+            let end = UnitPoint(
+                x: 0.5 + cos(angleRad) * 0.5,
+                y: 0.5 + sin(angleRad) * 0.5
+            )
+            self.foregroundStyle(
+                LinearGradient(gradient: grad, startPoint: start, endPoint: end)
+            )
+        case .radial:
+            self.foregroundStyle(
+                RadialGradient(
+                    gradient: grad,
+                    center: UnitPoint(x: gradient.centerX, y: gradient.centerY),
+                    startRadius: gradient.startRadius * 50,
+                    endRadius: gradient.endRadius * 200
+                )
+            )
+        case .angular:
+            self.foregroundStyle(
+                AngularGradient(
+                    gradient: grad,
+                    center: UnitPoint(x: gradient.centerX, y: gradient.centerY),
+                    angle: .degrees(gradient.angle)
+                )
+            )
+        }
     }
 }

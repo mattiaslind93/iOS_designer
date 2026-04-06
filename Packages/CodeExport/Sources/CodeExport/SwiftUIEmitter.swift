@@ -212,11 +212,11 @@ public struct SwiftUIEmitter {
             let sy = String(format: "%.2f", 0.5 - sin(angleRad) * 0.5)
             let ex = String(format: "%.2f", 0.5 + cos(angleRad) * 0.5)
             let ey = String(format: "%.2f", 0.5 + sin(angleRad) * 0.5)
-            return ".overlay(LinearGradient(gradient: Gradient(stops: [\(stopsCode)]), startPoint: UnitPoint(x: \(sx), y: \(sy)), endPoint: UnitPoint(x: \(ex), y: \(ey))))"
+            return ".foregroundStyle(LinearGradient(gradient: Gradient(stops: [\(stopsCode)]), startPoint: UnitPoint(x: \(sx), y: \(sy)), endPoint: UnitPoint(x: \(ex), y: \(ey))))"
         case .radial:
-            return ".overlay(RadialGradient(gradient: Gradient(stops: [\(stopsCode)]), center: UnitPoint(x: \(String(format: "%.2f", gradient.centerX)), y: \(String(format: "%.2f", gradient.centerY))), startRadius: \(Int(gradient.startRadius * 100)), endRadius: \(Int(gradient.endRadius * 200))))"
+            return ".foregroundStyle(RadialGradient(gradient: Gradient(stops: [\(stopsCode)]), center: UnitPoint(x: \(String(format: "%.2f", gradient.centerX)), y: \(String(format: "%.2f", gradient.centerY))), startRadius: \(Int(gradient.startRadius * 50)), endRadius: \(Int(gradient.endRadius * 200))))"
         case .angular:
-            return ".overlay(AngularGradient(gradient: Gradient(stops: [\(stopsCode)]), center: UnitPoint(x: \(String(format: "%.2f", gradient.centerX)), y: \(String(format: "%.2f", gradient.centerY))), angle: .degrees(\(Int(gradient.angle)))))"
+            return ".foregroundStyle(AngularGradient(gradient: Gradient(stops: [\(stopsCode)]), center: UnitPoint(x: \(String(format: "%.2f", gradient.centerX)), y: \(String(format: "%.2f", gradient.centerY))), angle: .degrees(\(Int(gradient.angle)))))"
         }
     }
 
