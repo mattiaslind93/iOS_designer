@@ -42,27 +42,40 @@ public struct ElementRenderer: View {
 
     public var body: some View {
         if node.isVisible {
-            renderPayload()
-                .applyModifiers(node.modifiers.filter { mod in
-                    if case .offset = mod { return false }
-                    return true
-                })
-                .contentShape(Rectangle())
-                .overlay {
-                    if selectedID == node.id {
-                        SelectionOverlay()
+            if isRoot {
+                // Root element must fill the full proposed size (phone frame)
+                // so that children at any offset position remain interactive.
+                renderPayload()
+                    .applyModifiers(node.modifiers.filter { mod in
+                        if case .offset = mod { return false }
+                        return true
+                    })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .id(node.id)
+            } else {
+                renderPayload()
+                    .applyModifiers(node.modifiers.filter { mod in
+                        if case .offset = mod { return false }
+                        return true
+                    })
+                    .contentShape(Rectangle())
+                    .overlay {
+                        if selectedID == node.id {
+                            SelectionOverlay()
+                        }
                     }
-                }
-                // Apply stored offset + live drag offset together so overlay follows
-                .offset(CGSize(
-                    width: storedOffset.width + dragOffset.width,
-                    height: storedOffset.height + dragOffset.height
-                ))
-                .gesture(elementDragGesture)
-                .onTapGesture {
-                    onSelect(node.id)
-                }
-                .id(node.id)
+                    // Apply stored offset + live drag offset together so overlay follows
+                    .offset(CGSize(
+                        width: storedOffset.width + dragOffset.width,
+                        height: storedOffset.height + dragOffset.height
+                    ))
+                    .gesture(elementDragGesture)
+                    .onTapGesture {
+                        onSelect(node.id)
+                    }
+                    .id(node.id)
+            }
         }
     }
 
