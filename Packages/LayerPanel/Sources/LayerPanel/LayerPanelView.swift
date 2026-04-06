@@ -271,6 +271,17 @@ struct LayerRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 4))
             .overlay(rowBorderOverlay)
             .contentShape(Rectangle())
+            .simultaneousGesture(
+                TapGesture(count: 2).onEnded {
+                    editedName = node.name
+                    isRenaming = true
+                }
+            )
+            .simultaneousGesture(
+                TapGesture(count: 1).onEnded {
+                    onSelect()
+                }
+            )
             .onHover { isHovered = $0 }
             .opacity(isDragging ? 0.4 : 1)
             .draggable(node.id.uuidString) { dragPreview }
@@ -338,11 +349,6 @@ struct LayerRow: View {
                 .font(.callout)
                 .foregroundStyle(style)
                 .lineLimit(1)
-                .onTapGesture(count: 2) {
-                    editedName = node.name
-                    isRenaming = true
-                }
-                .onTapGesture(count: 1) { onSelect() }
         }
     }
 
